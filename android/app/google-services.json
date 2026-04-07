@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "569344189606",
+    "project_id": "wifi-checkin-42170",
+    "storage_bucket": "wifi-checkin-42170.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:569344189606:android:912ace4c1b648e0005c067",
+        "android_client_info": {
+          "package_name": "com.example.wifi_checkin_flutter"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "569344189606-bl4iqhj12rj4s29qo0lao6r8cqgap8ft.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.example.wifi_checkin_flutter",
+            "certificate_hash": "8ad9b2032429acb1961f6f046fe0aa8c6b9394f7"
+          }
+        },
+        {
+          "client_id": "569344189606-3uakma469t0dca00664jqgtj881b42hk.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBytP18EFa7Rpq5j2AZCkVS_ZN8dTnQc-4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "569344189606-3uakma469t0dca00664jqgtj881b42hk.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
