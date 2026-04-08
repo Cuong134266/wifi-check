@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_sign_in/google_sign_in.dart';
@@ -9,6 +10,7 @@ import '../services/wifi_service.dart';
 import '../services/device_service.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../widgets/checkin_bottom_sheet.dart';
 
 class CheckinScreen extends StatefulWidget {
   const CheckinScreen({super.key});
@@ -25,6 +27,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   // --- Realtime Clock ---
   Timer? _clockTimer;
+  Timer? _wifiTimer;
   DateTime _currentTime = DateTime.now();
 
   // --- Animation ---
@@ -47,6 +50,7 @@ class _CheckinScreenState extends State<CheckinScreen>
   Map<String, dynamic> _locationInfo = {};
   bool _isLocationValid = false;
   String _locationStatusText = '';
+  bool _isFetchingLocation = false;
 
   // --- Interaction state ---
   bool _isDragging = false;
@@ -72,17 +76,25 @@ class _CheckinScreenState extends State<CheckinScreen>
         });
     });
 
+    // Tự động kiểm tra lại WiFi mỗi 5 giây
+    _wifiTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+      if (mounted && !_isCheckedIn) {
+        _checkWifi();
+        _checkLocation();
+      }
+    });
+
     _bounceController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 1000),
+      duration: const Duration(milliseconds: 1200),
     )..repeat(reverse: true);
-    _bounceAnimation = Tween<double>(begin: 0, end: 12).animate(
+    _bounceAnimation = Tween<double>(begin: 0, end: 10).animate(
       CurvedAnimation(parent: _bounceController, curve: Curves.easeInOut),
     );
 
     _springController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 500),
+      duration: const Duration(milliseconds: 600),
     );
 
     _initData();
@@ -91,6 +103,7 @@ class _CheckinScreenState extends State<CheckinScreen>
   @override
   void dispose() {
     _clockTimer?.cancel();
+    _wifiTimer?.cancel();
     _bounceController.dispose();
     _springController.dispose();
     super.dispose();
@@ -99,8 +112,38 @@ class _CheckinScreenState extends State<CheckinScreen>
   Future<void> _initData() async {
     _deviceInfo = await DeviceService.getInfo();
     _loadCache();
+    await _restoreCachedUser(); // Khôi phục tài khoản đã lưu trước đó
     await _checkWifi();
     await _checkLocation();
+    
+    // Nếu chưa có user từ cache, thử đăng nhập ngầm qua Google
+    if (_user == null) {
+      _ensureLoggedIn(silent: true);
+    } else {
+      // Đã có user từ cache, tải dữ liệu ngầm
+      _loadHistoryBg();
+      _loadRankingBg();
+    }
+  }
+
+  /// Khôi phục tài khoản đã lưu từ SharedPreferences
+  Future<void> _restoreCachedUser() async {
+    final prefs = await SharedPreferences.getInstance();
+    final userJson = prefs.getString('cached_user');
+    final settingsJson = prefs.getString('cached_settings');
+    if (userJson != null) {
+      setState(() {
+        _user = jsonDecode(userJson);
+        if (settingsJson != null) _settings = jsonDecode(settingsJson);
+      });
+    }
+  }
+
+  /// Lưu tài khoản vào SharedPreferences
+  Future<void> _saveUser(Map<String, dynamic> user, Map<String, dynamic> settings) async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setString('cached_user', jsonEncode(user));
+    await prefs.setString('cached_settings', jsonEncode(settings));
   }
 
   bool _isEarly() {
@@ -109,25 +152,31 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   Future<void> _checkLocation() async {
-    final locInfo = await LocationService.getInfo(_settings);
-    if (!mounted) return;
-    setState(() {
-      _locationInfo = locInfo;
-      if (locInfo['available'] == true) {
-        final distance = (locInfo['distance'] as double).round();
-        final radius = (locInfo['radius'] as double).round();
-        if (locInfo['in_range'] == true) {
-          _isLocationValid = true;
-          _locationStatusText = 'Trong phạm vi ($distance m / $radius m)';
+    if (_isFetchingLocation) return;
+    _isFetchingLocation = true;
+    try {
+      final locInfo = await LocationService.getInfo(_settings);
+      if (!mounted) return;
+      setState(() {
+        _locationInfo = locInfo;
+        if (locInfo['available'] == true) {
+          final distance = (locInfo['distance'] as double).round();
+          final radius = (locInfo['radius'] as double).round();
+          if (locInfo['in_range'] == true) {
+            _isLocationValid = true;
+            _locationStatusText = 'Trong phạm vi ($distance m / $radius m)';
+          } else {
+            _isLocationValid = false;
+            _locationStatusText = 'Ngoài phạm vi ($distance m / $radius m)';
+          }
         } else {
           _isLocationValid = false;
-          _locationStatusText = 'Ngoài phạm vi ($distance m / $radius m)';
+          _locationStatusText = locInfo['error'] ?? 'GPS không khả dụng';
         }
-      } else {
-        _isLocationValid = false;
-        _locationStatusText = locInfo['error'] ?? 'GPS không khả dụng';
-      }
-    });
+      });
+    } finally {
+      _isFetchingLocation = false;
+    }
   }
 
   // Khôi phục dữ liệu từ Cache (Shared Preferences) cho tốc độ 0ms
@@ -171,13 +220,23 @@ class _CheckinScreenState extends State<CheckinScreen>
     });
   }
 
-  Future<bool> _ensureLoggedIn() async {
+  Future<bool> _ensureLoggedIn({bool silent = false}) async {
     if (_user != null) return true;
 
     setState(() => _isLoggingIn = true);
     try {
-      await GoogleSignIn.instance.signOut();
-      final account = await GoogleSignIn.instance.authenticate();
+      GoogleSignInAccount? account;
+      if (silent) {
+        account = await GoogleSignIn.instance.attemptLightweightAuthentication();
+      } else {
+        account = await GoogleSignIn.instance.attemptLightweightAuthentication();
+        account ??= await GoogleSignIn.instance.authenticate();
+      }
+
+      if (account == null) {
+        if (mounted) setState(() => _isLoggingIn = false);
+        return false;
+      }
 
       final result = await ApiService.loginAndSync(
         account.email,
@@ -188,13 +247,18 @@ class _CheckinScreenState extends State<CheckinScreen>
 
       if (result['success'] == true) {
         if (!mounted) return false;
+        final employee = result['employee'] as Map<String, dynamic>;
+        final settings = (result['settings'] ?? {}) as Map<String, dynamic>;
         setState(() {
-          _user = result['employee'];
-          _settings = result['settings'] ?? {};
+          _user = employee;
+          _settings = settings;
           if (result['today_status']?['checked_in'] == true) {
             _isCheckedIn = true;
           }
         });
+
+        // Lưu tài khoản vào bộ nhớ cục bộ để lần sau mở app không cần đăng nhập lại
+        _saveUser(employee, settings);
 
         // Eager fetch: tải ngầm lịch sử ngay sau khi login thành công!
         _loadHistoryBg();
@@ -230,64 +294,132 @@ class _CheckinScreenState extends State<CheckinScreen>
     }
   }
 
-  Future<void> _handleCheckin() async {
-    if (_isCheckedIn) return;
-
-    setState(() => _isCheckingIn = true);
+  Future<bool> _performCheckin() async {
     try {
       if (!await _ensureLoggedIn()) {
-        setState(() => _isCheckingIn = false);
-        return;
+        return false;
       }
 
-      if (!_isWifiValid && !_isLocationValid) {
-        _showSnackbar('WiFi hoặc GPS không hợp lệ để điểm danh.');
-        setState(() => _isCheckingIn = false);
-        return;
+      if (!_isWifiValid) {
+        _showSnackbar('Bạn phải kết nối đúng WiFi công ty (SSID, BSSID, IP) để điểm danh.');
+        return false;
       }
 
-      final res = await ApiService.checkin(_user!['email'], _wifiInfo, {
+      // Lấy GPS tươi ngay trước khi gửi (tránh gửi dữ liệu cũ/rỗng)
+      final freshLocation = await LocationService.getInfo(_settings);
+      if (freshLocation['available'] == true) {
+        _locationInfo = freshLocation;
+        _isLocationValid = freshLocation['in_range'] == true;
+      }
+
+      // Đảm bảo device info đã sẵn sàng
+      if (_deviceInfo.isEmpty) {
+        _deviceInfo = await DeviceService.getInfo();
+      }
+
+      final res = await ApiService.checkin(_user!['email'], _wifiInfo, _deviceInfo, {
         'latitude': _locationInfo['latitude']?.toString() ?? '',
         'longitude': _locationInfo['longitude']?.toString() ?? '',
-        'gps_accuracy': _locationInfo['accuracy']?.toString() ?? '',
-        'gps_distance': _locationInfo['distance']?.toString() ?? '',
+        'distance': _locationInfo['distance']?.toString() ?? '',
         'checkin_method': _isWifiValid
             ? (_isLocationValid ? 'wifi+gps' : 'wifi')
             : 'gps',
       });
 
       if (res['success'] == true) {
-        setState(() {
-          _isCheckedIn = true;
-          _wifiStatusText = 'Đã hoàn tất điểm danh';
-          _wifiSubText =
-              res['checkin']?['message'] ?? 'Bạn đã ghi nhận hôm nay.';
-        });
+        _isCheckedIn = true;
+        _wifiStatusText = 'Đã hoàn tất điểm danh';
+        _wifiSubText =
+            res['checkin']?['message'] ?? 'Bạn đã ghi nhận hôm nay.';
         // Tự động kéo mới dữ liệu sau khi điểm danh thành công
         _loadHistoryBg();
+        return true;
       } else {
         if (res['already_checked_in'] == true) {
-          setState(() {
-            _isCheckedIn = true;
-            _wifiStatusText = 'Đã điểm danh hôm nay';
-            _wifiSubText = 'Lúc ${res['checkin_time']}';
-          });
+          _isCheckedIn = true;
+          _wifiStatusText = 'Đã điểm danh hôm nay';
+          _wifiSubText = 'Lúc ${res['checkin_time']}';
+          return true;
         } else {
           _showSnackbar(res['error'] ?? 'Lỗi không xác định');
+          return false;
         }
       }
     } catch (e) {
       if (e.toString().contains('đã check-in')) {
-        setState(() {
-          _isCheckedIn = true;
-          _wifiStatusText = 'Đã điểm danh hôm nay';
-        });
+        _isCheckedIn = true;
+        _wifiStatusText = 'Đã điểm danh hôm nay';
+        return true;
       } else {
         _showSnackbar(e.toString());
+        return false;
       }
-    } finally {
-      if (mounted) setState(() => _isCheckingIn = false);
     }
+  }
+
+  Future<bool> _performCheckinWithRefresh() async {
+    // Refresh ngầm trong lúc hiển thị Skeleton Loading
+    await _checkWifi();
+    await _checkLocation();
+    
+    if (!mounted) return false;
+
+    if (_isCheckedIn) {
+      // Đã checkin rồi, báo thành công ngay lập tức không gọi API
+      return true;
+    }
+
+    // Nếu chưa checkin, thực hiện call API _performCheckin chuẩn
+    return _performCheckin();
+  }
+
+  void _showCheckinResultSheet() {
+    if (!mounted) return;
+    // Bỏ vụ await _checkWifi/Location ở ngoài để Popup hiện NGAY LẬP TỨC!
+    
+    showGeneralDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 48.0, left: 16, right: 16),
+              child: Material(
+                color: Colors.transparent,
+                child: CheckinBottomSheet(
+                  checkinFuture: _performCheckinWithRefresh(),
+                  locationInfo: _locationInfo,
+                  // Đặt false để ép nó hiện Skeleton Loading ngay lập tức 
+                  // và nó sẽ tự nhận true nếu Future _performCheckinWithRefresh() trả về true
+                  isAlreadyCheckedIn: false, 
+                  checkinTime: _wifiSubText,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          child: FadeTransition(
+            opacity: anim1,
+            child: child,
+          ),
+        );
+      },
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   // Tải nền tĩnh lặng để có sẵn data trước khi mở Tab
@@ -403,34 +535,46 @@ class _CheckinScreenState extends State<CheckinScreen>
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      image: DecorationImage(
-                        image:
-                            (_user != null &&
-                                (_user!['avatar'] ?? '').isNotEmpty)
-                            ? NetworkImage(_user!['avatar']) as ImageProvider
-                            : const AssetImage(
-                                'assets/images/default_avatar.png',
-                              ),
-                        fit: BoxFit.cover,
+                  // Avatar: ảnh mạng nếu đã login, icon mặc định nếu chưa
+                  if (_user != null && (_user!['avatar'] ?? '').isNotEmpty)
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        image: DecorationImage(
+                          image: NetworkImage(_user!['avatar']),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    )
+                  else
+                    Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: const Color(0xFFF3F4F6),
+                      ),
+                      child: const Icon(
+                        Icons.person_outline_rounded,
+                        size: 22,
+                        color: Color(0xFF9CA3AF),
                       ),
                     ),
-                  ),
                   const SizedBox(width: 12),
                   Text(
                     _user != null
                         ? (_user!['name'] ?? _user!['email'])
-                        : 'Mạnh Cường',
-                    style: const TextStyle(
+                        : 'Đăng nhập',
+                    style: TextStyle(
                       fontWeight: FontWeight.w500,
                       fontSize: 16,
-                      color: Color(0xFF111827),
+                      color: _user != null
+                          ? const Color(0xFF111827)
+                          : const Color(0xFF6B7280),
                       fontFamily: 'Inter',
-                      letterSpacing: -0.2, // Sleek tighter spacing
+                      letterSpacing: -0.2,
                     ),
                   ),
                 ],
@@ -478,9 +622,11 @@ class _CheckinScreenState extends State<CheckinScreen>
         ? const Color(0xFF2E7D32)
         : (isEarly ? const Color(0xFF141517) : const Color(0xFFC62828));
 
-    return Column(
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 84), // Dịch toàn bộ cụm lên trên thêm 24px nữa
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
         // Center Image
         Container(
           width: 140,
@@ -508,8 +654,8 @@ class _CheckinScreenState extends State<CheckinScreen>
         Text(
           _getFormattedTime(),
           style: const TextStyle(
-            fontSize: 30,
-            fontWeight: FontWeight.w600,
+            fontSize: 52, // Tăng kích cỡ chữ đồng hồ lên 52px
+            fontWeight: FontWeight.w700, // Làm chữ đậm thêm một chút
             color: Color(0xFF1F2937),
             fontFamily: 'Inter',
             height: 1.1,
@@ -534,8 +680,9 @@ class _CheckinScreenState extends State<CheckinScreen>
           ),
         ),
       ],
-    );
-  }
+    ),
+  );
+}
 
   Widget _buildFooter() {
     return Padding(
@@ -544,29 +691,29 @@ class _CheckinScreenState extends State<CheckinScreen>
         children: [
           GestureDetector(
             onVerticalDragStart: (details) {
-              if (_isCheckingIn || _isLoggingIn || _isCheckedIn) return;
+              if (_isCheckingIn || _isLoggingIn) return;
               _springController.stop();
               setState(() => _isDragging = true);
             },
             onVerticalDragUpdate: (details) {
-              if (_isCheckingIn || _isLoggingIn || _isCheckedIn) return;
+              if (_isCheckingIn || _isLoggingIn) return;
               setState(() {
                 _dragOffset += details.primaryDelta!;
                 if (_dragOffset > 0) _dragOffset = 0;
-                if (_dragOffset < -200) _dragOffset = -200; // Limit drag height
+                if (_dragOffset < -200) _dragOffset = -200;
               });
             },
             onVerticalDragEnd: (details) {
-              if (_isCheckingIn || _isLoggingIn || _isCheckedIn) return;
+              if (_isCheckingIn || _isLoggingIn) return;
               if (_dragOffset < -80 ||
                   (details.primaryVelocity != null &&
                       details.primaryVelocity! < -300)) {
-                _handleCheckin();
+                _showCheckinResultSheet();
               }
               _executeSpringBack();
             },
             onVerticalDragCancel: () {
-              if (_isCheckingIn || _isLoggingIn || _isCheckedIn) return;
+              if (_isCheckingIn || _isLoggingIn) return;
               _executeSpringBack();
             },
             child: AnimatedBuilder(
@@ -679,9 +826,10 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   void _executeSpringBack() {
+    final startOffset = _dragOffset;
     setState(() => _isDragging = false);
-    _springAnimation = Tween<double>(begin: _dragOffset, end: 0.0).animate(
-      CurvedAnimation(parent: _springController, curve: Curves.elasticOut),
+    _springAnimation = Tween<double>(begin: startOffset, end: 0.0).animate(
+      CurvedAnimation(parent: _springController, curve: Curves.easeOutBack),
     );
     _springController.forward(from: 0.0);
   }

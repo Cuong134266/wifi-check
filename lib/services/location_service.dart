@@ -29,8 +29,8 @@ class LocationService {
 
       return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.high,
-          timeLimit: Duration(seconds: 10),
+          accuracy: LocationAccuracy.best,
+          timeLimit: Duration(seconds: 15),
         ),
       );
     } catch (_) {
@@ -49,8 +49,8 @@ class LocationService {
   }
 
   // --- DEV MODE ---
-  static bool debugFakeLocation = true; // Bật cờ này để test
-  static double debugLatOffset = 0.0000; // Thay đổi để test vị trí xa/gần
+  static bool debugFakeLocation = false; // TẮT fake → dùng GPS thật
+  static double debugLatOffset = 0.0000;
   static double debugLngOffset = 0.0000;
 
   /// Lấy thông tin location đầy đủ cho check-in

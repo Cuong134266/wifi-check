@@ -105,7 +105,8 @@ class ApiService {
   static Future<Map<String, dynamic>> checkin(
     String email, 
     Map<String, dynamic> wifiData, 
-    Map<String, dynamic> deviceData
+    Map<String, dynamic> deviceData,
+    Map<String, dynamic> locationData
   ) async {
     return request('checkin', {
       'email': email,
@@ -114,7 +115,11 @@ class ApiService {
       'ip_address': wifiData['ip'] ?? '',
       'signal_strength': wifiData['rssi'] ?? '',
       'device_id': deviceData['id'] ?? '',
-      'device_model': deviceData['model'] ?? ''
+      'device_model': deviceData['model'] ?? '',
+      'latitude': locationData['latitude']?.toString() ?? '',
+      'longitude': locationData['longitude']?.toString() ?? '',
+      'gps_distance': locationData['distance']?.toString() ?? '',
+      'checkin_method': locationData['checkin_method']?.toString() ?? ''
     });
   }
 }
