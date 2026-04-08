@@ -9,7 +9,7 @@ void main() async {
   await ApiService.init();
   await GoogleSignIn.instance.initialize(
     clientId: kIsWeb
-        ? '569344189606-3uakma469t0dca00664jqgtj881b42hk.apps.googleusercontent.com'
+        ? '22727687094-p116tl7os4okfvpn6pla4614fusjis9u.apps.googleusercontent.com'
         : null,
     serverClientId: kIsWeb
         ? null
