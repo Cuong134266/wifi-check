@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'screens/checkin_screen.dart';
 import 'services/api_service.dart';
@@ -7,7 +8,12 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await ApiService.init();
   await GoogleSignIn.instance.initialize(
-    serverClientId: '569344189606-3uakma469t0dca00664jqgtj881b42hk.apps.googleusercontent.com', 
+    clientId: kIsWeb
+        ? '569344189606-3uakma469t0dca00664jqgtj881b42hk.apps.googleusercontent.com'
+        : null,
+    serverClientId: kIsWeb
+        ? null
+        : '569344189606-3uakma469t0dca00664jqgtj881b42hk.apps.googleusercontent.com', 
   );
   runApp(const MyApp());
 }

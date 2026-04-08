@@ -1,6 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math';
-import 'dart:io' show Platform;
+import 'package:flutter/foundation.dart';
 
 class DeviceService {
   static Future<Map<String, dynamic>> getInfo() async {
@@ -13,14 +13,32 @@ class DeviceService {
     }
 
     String os = 'Unknown';
-    if (Platform.isAndroid) os = 'Android';
-    if (Platform.isIOS) os = 'iOS';
+    if (kIsWeb) {
+      os = 'Web';
+    } else {
+      // Chỉ import dart:io khi KHÔNG phải Web
+      try {
+        os = _getPlatformOS();
+      } catch (_) {
+        os = 'Unknown';
+      }
+    }
 
     return {
       'id': id,
-      'model': os == 'Android' ? 'Android Device' : 'Apple Device',
+      'model': os == 'Android' ? 'Android Device' : (os == 'iOS' ? 'Apple Device' : 'Web Browser'),
       'os': os,
     };
+  }
+
+  static String _getPlatformOS() {
+    // Tách riêng hàm này để tránh import dart:io ở top-level
+    // Trên Web, hàm này KHÔNG BAO GIỜ được gọi (đã guard bởi kIsWeb)
+    return defaultTargetPlatform == TargetPlatform.android
+        ? 'Android'
+        : defaultTargetPlatform == TargetPlatform.iOS
+            ? 'iOS'
+            : 'Unknown';
   }
 
   static String _generateUUID() {

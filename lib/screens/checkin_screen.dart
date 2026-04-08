@@ -211,12 +211,21 @@ class _CheckinScreenState extends State<CheckinScreen>
       return;
     }
 
+    // Đọc được WiFi rồi → tiến hành VERIFY đúng WiFi công ty
+    final verifyResult = WifiService.verify(wifiInfo, _settings);
+    
     setState(() {
       _wifiInfo = wifiInfo;
-      _wifiStatusText = 'Đã sẵn sàng điểm danh...';
-      _wifiSubText =
-          'Bạn đang kết nối ${wifiInfo['ssid']}. Điểm danh ngay trên màn hình này.';
-      _isWifiValid = true;
+      if (verifyResult['verified'] == true) {
+        _wifiStatusText = 'Đã sẵn sàng điểm danh...';
+        _wifiSubText =
+            'Bạn đang kết nối ${wifiInfo['ssid']}. Điểm danh ngay trên màn hình này.';
+        _isWifiValid = true;
+      } else {
+        _wifiStatusText = 'Mạng không hợp lệ';
+        _wifiSubText = (verifyResult['reasons'] as List).join(' • ');
+        _isWifiValid = false;
+      }
     });
   }
 

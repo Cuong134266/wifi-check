@@ -1,7 +1,10 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:webview_flutter/webview_flutter.dart';
+import 'package:flutter/foundation.dart';
+
+// Conditional import: native dùng WebView, web dùng Image fallback
+import 'checkin_map_native.dart' if (dart.library.html) 'checkin_map_web.dart' as map_impl;
 
 class CheckinBottomSheet extends StatefulWidget {
   final Future<bool> checkinFuture;
@@ -27,7 +30,6 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   bool _isSuccess = false;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
-  late WebViewController _webViewController;
 
   @override
   void initState() {
@@ -41,41 +43,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
       curve: Curves.easeOut,
     );
 
-    double lat = 21.028511;
-    double lng = 105.804817;
-    try {
-      if (widget.locationInfo['latitude'] != null) {
-        lat = double.parse(widget.locationInfo['latitude'].toString());
-      }
-      if (widget.locationInfo['longitude'] != null) {
-        lng = double.parse(widget.locationInfo['longitude'].toString());
-      }
-    } catch (_) {}
-
-    final String mapHtml =
-        '''
-<!DOCTYPE html>
-<html>
-<head>
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<style>
-  body { margin: 0; padding: 0; background-color: transparent; }
-  iframe { width: 100vw; height: 100vh; border: none; }
-</style>
-</head>
-<body>
-  <iframe src="https://maps.google.com/maps?q=$lat,$lng&hl=vi&z=16&output=embed"></iframe>
-</body>
-</html>
-''';
-
-    _webViewController = WebViewController()
-      ..setJavaScriptMode(JavaScriptMode.unrestricted)
-      ..setBackgroundColor(Colors.transparent)
-      ..loadHtmlString(mapHtml);
-
     if (widget.isAlreadyCheckedIn) {
-      // Đã checkin rồi → hiện luôn trạng thái thành công, không gọi API
       _isLoading = false;
       _isSuccess = true;
       _fadeController.forward();
@@ -127,10 +95,8 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
       children: [
         Container(
           decoration: BoxDecoration(
-            color: Colors.white, // Trắng tinh theo Figma
-            borderRadius: BorderRadius.circular(
-              24,
-            ), // Bo góc 24px tất cả các vành vì đang ở dạng Dialog
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(24),
           ),
           padding: const EdgeInsets.all(24),
           child: Column(
@@ -235,11 +201,8 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   }
 
   Widget _buildSuccessView() {
-    // Lấy giờ checkin: nếu đã checkin trước đó thì dùng checkinTime,
-    // nếu vừa checkin xong thì lấy giờ hiện tại
     String timeString;
     if (widget.isAlreadyCheckedIn && widget.checkinTime != null) {
-      // checkinTime có thể là "Lúc 08:08" hoặc chỉ "08:08"
       final t = widget.checkinTime!;
       final match = RegExp(r'(\d{1,2}:\d{2})').firstMatch(t);
       timeString = match?.group(1) ?? t;
@@ -248,6 +211,18 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
       timeString =
           '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
     }
+
+    // Lấy tọa độ
+    double lat = 21.028511;
+    double lng = 105.804817;
+    try {
+      if (widget.locationInfo['latitude'] != null) {
+        lat = double.parse(widget.locationInfo['latitude'].toString());
+      }
+      if (widget.locationInfo['longitude'] != null) {
+        lng = double.parse(widget.locationInfo['longitude'].toString());
+      }
+    } catch (_) {}
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -260,7 +235,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           fit: BoxFit.contain,
         ),
         const SizedBox(height: 20),
-        // Title — Bold đen, font lớn
+        // Title
         const Text(
           'Checkin thành công',
           style: TextStyle(
@@ -272,7 +247,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           ),
         ),
         const SizedBox(height: 8),
-        // Subtitle — "Bạn đã check vào lúc" + thời gian đậm màu cam
+        // Subtitle
         RichText(
           text: TextSpan(
             style: const TextStyle(
@@ -286,7 +261,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
                 text: timeString,
                 style: const TextStyle(
                   fontWeight: FontWeight.w700,
-                  color: Color(0xFFE35B2C), // Cam đậm giống Figma
+                  color: Color(0xFFE35B2C),
                 ),
               ),
             ],
@@ -294,7 +269,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
         ),
         const SizedBox(height: 20),
 
-        // Divider giống Figma
+        // Divider
         Container(
           width: double.infinity,
           height: 1,
@@ -302,12 +277,12 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
         ),
         const SizedBox(height: 20),
 
-        // MAP
+        // MAP — sử dụng conditional import
         SizedBox(
           height: 160,
           child: ClipRRect(
             borderRadius: BorderRadius.circular(16),
-            child: WebViewWidget(controller: _webViewController),
+            child: map_impl.buildMapWidget(lat, lng),
           ),
         ),
 
@@ -319,11 +294,11 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           child: ElevatedButton(
             onPressed: () => Navigator.pop(context),
             style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF000000), // Đen tuyền
+              backgroundColor: const Color(0xFF000000),
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(26),
-              ), // Gần như bo tròn hẳn
+              ),
               elevation: 0,
             ),
             child: const Text(
