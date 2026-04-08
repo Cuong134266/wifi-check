@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -11,6 +12,7 @@ import '../services/device_service.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/checkin_bottom_sheet.dart';
+import '../services/web_sign_in.dart' as web;
 
 class CheckinScreen extends StatefulWidget {
   const CheckinScreen({super.key});
@@ -56,6 +58,10 @@ class _CheckinScreenState extends State<CheckinScreen>
   bool _isDragging = false;
   double _dragOffset = 0.0;
 
+  // Web auth stream
+  StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
+  Completer<bool>? _webLoginCompleter;
+
   // --- Views ---
   bool _showHistory = false;
   int _statsSubTab = 0; // 0 = Cá nhân, 1 = Xếp hạng
@@ -97,6 +103,13 @@ class _CheckinScreenState extends State<CheckinScreen>
       duration: const Duration(milliseconds: 600),
     );
 
+    // Lắng nghe sự kiện đăng nhập từ Google (cần cho Web renderButton)
+    _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((event) {
+      if (event is GoogleSignInAuthenticationEventSignIn) {
+        _handleGoogleAccount(event.user);
+      }
+    });
+
     _initData();
   }
 
@@ -106,6 +119,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     _wifiTimer?.cancel();
     _bounceController.dispose();
     _springController.dispose();
+    _authSubscription?.cancel();
     super.dispose();
   }
 
@@ -229,24 +243,9 @@ class _CheckinScreenState extends State<CheckinScreen>
     });
   }
 
-  Future<bool> _ensureLoggedIn({bool silent = false}) async {
-    if (_user != null) return true;
-
-    setState(() => _isLoggingIn = true);
+  /// Xử lý GoogleSignInAccount sau khi đăng nhập thành công (dùng chung native + web)
+  Future<bool> _handleGoogleAccount(GoogleSignInAccount account) async {
     try {
-      GoogleSignInAccount? account;
-      if (silent) {
-        account = await GoogleSignIn.instance.attemptLightweightAuthentication();
-      } else {
-        account = await GoogleSignIn.instance.attemptLightweightAuthentication();
-        account ??= await GoogleSignIn.instance.authenticate();
-      }
-
-      if (account == null) {
-        if (mounted) setState(() => _isLoggingIn = false);
-        return false;
-      }
-
       final result = await ApiService.loginAndSync(
         account.email,
         account.displayName ?? '',
@@ -266,10 +265,7 @@ class _CheckinScreenState extends State<CheckinScreen>
           }
         });
 
-        // Lưu tài khoản vào bộ nhớ cục bộ để lần sau mở app không cần đăng nhập lại
         _saveUser(employee, settings);
-
-        // Eager fetch: tải ngầm lịch sử ngay sau khi login thành công!
         _loadHistoryBg();
         _loadRankingBg();
 
@@ -288,11 +284,89 @@ class _CheckinScreenState extends State<CheckinScreen>
             }
           });
         }
+
+        // Nếu đang chờ web login completer, giải phóng nó
+        if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
+          _webLoginCompleter!.complete(true);
+        }
         return true;
       } else {
         await GoogleSignIn.instance.signOut();
         _showSnackbar(result['error'] ?? 'Lỗi xác thực');
+        if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
+          _webLoginCompleter!.complete(false);
+        }
         return false;
+      }
+    } catch (e) {
+      _showSnackbar('Đăng nhập thất bại: $e');
+      if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
+        _webLoginCompleter!.complete(false);
+      }
+      return false;
+    }
+  }
+
+  Future<bool> _ensureLoggedIn({bool silent = false}) async {
+    if (_user != null) return true;
+
+    setState(() => _isLoggingIn = true);
+    try {
+      GoogleSignInAccount? account;
+      
+      // Bước 1: Thử đăng nhập nhẹ (dùng token cũ nếu có)
+      account = await GoogleSignIn.instance.attemptLightweightAuthentication();
+      
+      if (account != null) {
+        return await _handleGoogleAccount(account);
+      }
+
+      // Bước 2: Nếu silent mode thì dừng ở đây
+      if (silent) {
+        if (mounted) setState(() => _isLoggingIn = false);
+        return false;
+      }
+
+      // Bước 3: Đăng nhập tương tác
+      if (kIsWeb) {
+        // WEB: Mở dialog chứa nút đăng nhập Google chính thức
+        _webLoginCompleter = Completer<bool>();
+        if (mounted) {
+          showDialog(
+            context: context,
+            barrierDismissible: true,
+            builder: (ctx) => AlertDialog(
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              title: const Text(
+                'Đăng nhập bằng Google',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+                textAlign: TextAlign.center,
+              ),
+              content: SizedBox(
+                height: 60,
+                child: Center(
+                  child: web.renderButton(),
+                ),
+              ),
+            ),
+          ).then((_) {
+            // User đóng dialog mà chưa đăng nhập
+            if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
+              _webLoginCompleter!.complete(false);
+            }
+          });
+        }
+        final result = await _webLoginCompleter!.future;
+        _webLoginCompleter = null;
+        // Đóng dialog nếu vẫn đang mở
+        if (mounted && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        return result;
+      } else {
+        // NATIVE: Dùng authenticate() bình thường
+        final authedAccount = await GoogleSignIn.instance.authenticate();
+        return await _handleGoogleAccount(authedAccount);
       }
     } catch (e) {
       if (!e.toString().contains("cancel"))
