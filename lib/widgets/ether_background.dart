@@ -1,81 +1,15 @@
 import 'dart:math';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
-// ============================================================
-//  GOOGLE ANTIGRAVITY — faithful Flutter recreation
-//  Reference: https://antigravity.google  (screenshot 2026-04-07)
-//
-//  Key visual traits extracted from the original:
-//   • Background : very light off-white / cool-grey (#EEEEF2)
-//   • Particles  : short, thin, slightly-tilted capsule dashes
-//   • Colors     : Google-brand Blue, Red/Orange, Purple, Yellow
-//   • Micro-dots : tiny 1-px grey dots scattered everywhere
-//   • Layout     : dense vortex/spiral in the upper-LEFT quadrant,
-//                  very sparse towards the right & bottom
-//   • Mouse      : gentle parallax / slight repulsion (not aggressive)
-// ============================================================
+// =======================================================================
+// ANTIGRAVITY PARTICLE ANIMATION — integrated into wifi-check
+// Replaces the old EtherBackground with the Antigravity particle system
+// =======================================================================
 
-const _kBgColor = Color(0xFFEEEEF2); // cool off-white
+const _kBgColor = Color(0xFFF4F6FA);
 
-// Google brand palette for dashes
-const List<Color> _kColors = [
-  Color(0xFF4285F4), // Google Blue
-  Color(0xFF4285F4), // Blue (weighted heavier)
-  Color(0xFF4285F4),
-  Color(0xFFEA4335), // Google Red
-  Color(0xFFFA7B17), // Google Orange
-  Color(0xFF9C27B0), // Purple
-  Color(0xFF7986CB), // Indigo / blue-purple
-  Color(0xFFAD1457), // Deep pink
-];
-
-const _kMicroDotColor = Color(0xFFBDBDBD); // faint grey micro-dots
-
-// ─────────────────────────────────────────────
-//  Data model for one dash particle
-// ─────────────────────────────────────────────
-class _Dash {
-  // Polar coordinates in the vortex space
-  double angle;    // radians
-  double radius;   // distance from the vortex origin
-  double speed;    // orbital speed multiplier
-  double phase;    // wave phase offset
-
-  // Visual
-  final Color color;
-  final double length;   // dash length px (at scale 1)
-  final double width;    // dash thickness px (at scale 1)
-  final double tiltAngle; // dash orientation angle (radians)
-
-  // Current projected screen position
-  double sx = 0, sy = 0;
-  double scale = 1.0;
-
-  _Dash({
-    required this.angle,
-    required this.radius,
-    required this.speed,
-    required this.phase,
-    required this.color,
-    required this.length,
-    required this.width,
-    required this.tiltAngle,
-  });
-}
-
-// ─────────────────────────────────────────────
-//  Data model for one micro-dot
-// ─────────────────────────────────────────────
-class _MicroDot {
-  final double x;
-  final double y; // normalised 0..1
-  final double size;
-  _MicroDot(this.x, this.y, this.size);
-}
-
-// ─────────────────────────────────────────────
-//  Widget
-// ─────────────────────────────────────────────
 class EtherBackground extends StatefulWidget {
   final Widget child;
   const EtherBackground({super.key, required this.child});
@@ -86,272 +20,278 @@ class EtherBackground extends StatefulWidget {
 
 class _EtherBackgroundState extends State<EtherBackground>
     with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-  final List<_Dash> _dashes = [];
-  final List<_MicroDot> _microDots = [];
-  final _rand = Random(42);
+  late Ticker _ticker;
+  double _elapsed = 0;
 
+  // Particles — flat arrays for performance
+  static const int _countX = 40;
+  static const int _countY = 25;
+  static const int _count = _countX * _countY;
+  final _baseX = List<double>.filled(_count, 0);
+  final _baseY = List<double>.filled(_count, 0);
+  final _randoms = List<double>.filled(_count, 0);
+
+  // Pointer
+  Offset? _pointerPos;
+  double _lastPointerTime = -10;
+  bool _hovering = false;
+
+  // Halo (smooth follow, in normalized 0..1 coords)
+  double _haloNX = 0.5;
+  double _haloNY = 0.5;
+
+  // Last known size
   Size _size = Size.zero;
-  Offset? _cursor; // screen-space cursor
-  Offset? _smoothCursor;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(
-      vsync: this,
-      duration: const Duration(seconds: 20),
-    )
-      ..addListener(_tick)
-      ..repeat();
-    _buildParticles();
+    _initGrid();
+    _ticker = createTicker(_onTick)..start();
   }
 
-  // ── Build particle lists ─────────────────────────────────
-  void _buildParticles() {
-    _dashes.clear();
-    _microDots.clear();
-
-    // Dashes — concentrated in top-left quadrant.
-    // We use polar coords around (0,0) in normalised space;
-    // the vortex origin maps to roughly (-0.05 , 0.15) of the screen.
-    const int N = 420;
-    for (int i = 0; i < N; i++) {
-      // Bias radius: most particles are close to origin (dense) with a
-      // long power-law tail (a few scattered particles far away).
-      final double u = _rand.nextDouble();
-      // Exponential distribution → dense core, sparse tail
-      final double rawR = -log(1 - u * 0.999) * 0.28; // 0..~2 normalised
-
-      // Clamp to actual useful range and convert to pixels later
-      final double r = rawR.clamp(0.05, 1.8);
-
-      // Angle — biased towards the top-left arc (roughly -π/4 .. 3π/4)
-      // to match the screenshot where particles cascade from upper-left
-      // outward to the right.
-      final double a = _rand.nextDouble() * 2 * pi;
-
-      final Color c = _kColors[_rand.nextInt(_kColors.length)];
-      final double len = 5.0 + _rand.nextDouble() * 8.0;   // 5–13 px
-      final double wid = 1.2 + _rand.nextDouble() * 1.2;    // 1.2–2.4 px
-      // Dash tilt: the original dashes are roughly \ tilted (~45°)
-      final double tilt = -pi / 4 + (_rand.nextDouble() - 0.5) * 0.8;
-
-      _dashes.add(_Dash(
-        angle: a,
-        radius: r,
-        speed: 0.6 + _rand.nextDouble() * 0.8, // orbital speed
-        phase: _rand.nextDouble() * 2 * pi,
-        color: c,
-        length: len,
-        width: wid,
-        tiltAngle: tilt,
-      ));
-    }
-
-    // Micro-dots — random across the whole screen
-    const int MD = 180;
-    for (int i = 0; i < MD; i++) {
-      _microDots.add(_MicroDot(
-        _rand.nextDouble(),
-        _rand.nextDouble(),
-        0.8 + _rand.nextDouble() * 1.0,
-      ));
-    }
-  }
-
-  // ── Per-frame tick ───────────────────────────────────────
-  void _tick() {
-    if (_size == Size.zero) return;
-    final double t =
-        (_ctrl.lastElapsedDuration?.inMilliseconds ?? 0) / 1000.0;
-
-    final double W = _size.width;
-    final double H = _size.height;
-
-    // Vortex origin: upper-left of screen (matches screenshot)
-    final double ox = W * -0.06; // slightly off-screen left
-    final double oy = H * 0.12;
-
-    // Scale: 1 normalised unit = this many pixels
-    // We want the dense core (r~0.2) at ~80-150px from origin,
-    // and the tail extending across most of the screen.
-    final double unitPx = W * 0.38;
-
-    // Smooth cursor (lerp for parallax softness)
-    if (_cursor != null) {
-      _smoothCursor ??= _cursor;
-      _smoothCursor = Offset(
-        _smoothCursor!.dx + (_cursor!.dx - _smoothCursor!.dx) * 0.07,
-        _smoothCursor!.dy + (_cursor!.dy - _smoothCursor!.dy) * 0.07,
-      );
-    } else {
-      _smoothCursor = null;
-    }
-
-    for (final d in _dashes) {
-      // Orbital motion: angle increases over time
-      final double a = d.angle + t * d.speed * 0.18;
-
-      // Gentle breathing (radial oscillation)
-      final double r = d.radius * (1 + 0.04 * sin(t * 0.4 + d.phase));
-
-      // 3-D perspective: treat y-spread as a mild tilt
-      // Particles behind (sin(a) < 0) appear slightly smaller
-      final double perspScale = 1.0 - 0.12 * sin(a);
-      d.scale = perspScale;
-
-      // Project to screen
-      double px = ox + cos(a) * r * unitPx;
-      double py = oy + sin(a) * r * unitPx * 0.55 // flatten Y for ellipse
-          + sin(t * 0.6 + d.phase * 2) * r * 8; // subtle vertical sway
-
-      // ── Cursor parallax / gentle repulsion ─────────────
-      if (_smoothCursor != null) {
-        final double cdx = px - _smoothCursor!.dx;
-        final double cdy = py - _smoothCursor!.dy;
-        final double cDist = sqrt(cdx * cdx + cdy * cdy);
-        const double repRadius = 140.0;
-        if (cDist < repRadius && cDist > 1) {
-          final double strength =
-              pow((repRadius - cDist) / repRadius, 2).toDouble() * 30;
-          px += (cdx / cDist) * strength;
-          py += (cdy / cDist) * strength;
-        }
+  void _initGrid() {
+    final rng = Random(42);
+    int i = 0;
+    for (int y = 0; y < _countY; y++) {
+      for (int x = 0; x < _countX; x++) {
+        _baseX[i] = x / (_countX - 1) + (rng.nextDouble() - 0.5) * 0.035;
+        _baseY[i] = y / (_countY - 1) + (rng.nextDouble() - 0.5) * 0.035;
+        _randoms[i] = rng.nextDouble();
+        i++;
       }
+    }
+  }
 
-      d.sx = px;
-      d.sy = py;
+  void _onTick(Duration duration) {
+    _elapsed = duration.inMicroseconds / 1e6;
+    if (!mounted) return;
+
+    final idleTime = _elapsed - _lastPointerTime;
+    final isIdle = idleTime > 2.0 || !_hovering;
+
+    double targetNX, targetNY;
+    if (isIdle) {
+      final autoSpeed = _elapsed * 0.3;
+      targetNX = 0.5 + sin(autoSpeed) * 0.25;
+      targetNY = 0.5 + sin(autoSpeed * 2.0) * 0.15;
+    } else if (_pointerPos != null && _size.width > 0) {
+      targetNX = _pointerPos!.dx / _size.width;
+      targetNY = _pointerPos!.dy / _size.height;
+    } else {
+      targetNX = 0.5;
+      targetNY = 0.5;
     }
 
-    if (mounted) setState(() {});
+    final drag = isIdle ? 0.02 : 0.06;
+    _haloNX += (targetNX - _haloNX) * drag;
+    _haloNY += (targetNY - _haloNY) * drag;
+
+    setState(() {});
   }
 
   @override
   void dispose() {
-    _ctrl.dispose();
+    _ticker.dispose();
     super.dispose();
   }
 
-  // ── Build ────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (ctx, constraints) {
-      final s = Size(constraints.maxWidth, constraints.maxHeight);
-      if (_size != s) _size = s;
-
-      return MouseRegion(
-        cursor: SystemMouseCursors.basic,
-        onHover: (e) => _cursor = e.localPosition,
-        onExit: (_) {
-          _cursor = null;
-          _smoothCursor = null;
-        },
-        child: GestureDetector(
-          onPanUpdate: (d) => _cursor = d.localPosition,
-          onPanEnd: (_) {
-            _cursor = null;
-            _smoothCursor = null;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        _size = Size(constraints.maxWidth, constraints.maxHeight);
+        return GestureDetector(
+          onPanUpdate: (d) {
+            _pointerPos = d.localPosition;
+            _hovering = true;
+            _lastPointerTime = _elapsed;
           },
-          child: CustomPaint(
-            painter: _AntigravityPainter(
-              dashes: _dashes,
-              microDots: _microDots,
-              screenSize: _size,
+          onPanEnd: (_) => _hovering = false,
+          child: MouseRegion(
+            onHover: (e) {
+              _pointerPos = e.localPosition;
+              _hovering = true;
+              _lastPointerTime = _elapsed;
+            },
+            onEnter: (_) => _hovering = true,
+            onExit: (_) => _hovering = false,
+            child: RepaintBoundary(
+              child: CustomPaint(
+                painter: _AntigravityPainter(
+                  baseX: _baseX,
+                  baseY: _baseY,
+                  count: _count,
+                  elapsed: _elapsed,
+                  haloNX: _haloNX,
+                  haloNY: _haloNY,
+                ),
+                child: widget.child,
+              ),
             ),
-            child: widget.child,
           ),
-        ),
-      );
-    });
+        );
+      },
+    );
   }
 }
 
-// ─────────────────────────────────────────────
-//  Painter
-// ─────────────────────────────────────────────
+// ---- Optimized Painter ----
+
 class _AntigravityPainter extends CustomPainter {
-  final List<_Dash> dashes;
-  final List<_MicroDot> microDots;
-  final Size screenSize;
+  final List<double> baseX, baseY;
+  final int count;
+  final double elapsed;
+  final double haloNX, haloNY;
 
   _AntigravityPainter({
-    required this.dashes,
-    required this.microDots,
-    required this.screenSize,
+    required this.baseX,
+    required this.baseY,
+    required this.count,
+    required this.elapsed,
+    required this.haloNX,
+    required this.haloNY,
   });
+
+  static double _smoothstep(double e0, double e1, double x) {
+    final t = ((x - e0) / (e1 - e0)).clamp(0.0, 1.0);
+    return t * t * (3.0 - 2.0 * t);
+  }
+
+  static double _hash(double x, double y) {
+    return (sin(x * 12.9898 + y * 78.233) * 43758.5453) % 1.0;
+  }
+
+  static double _noise(double x, double y) {
+    final ix = x.floor().toDouble();
+    final iy = y.floor().toDouble();
+    var fx = x - ix;
+    var fy = y - iy;
+    fx = fx * fx * (3.0 - 2.0 * fx);
+    fy = fy * fy * (3.0 - 2.0 * fy);
+    final a = _hash(ix, iy);
+    final b = _hash(ix + 1, iy);
+    final c = _hash(ix, iy + 1);
+    final d = _hash(ix + 1, iy + 1);
+    final ab = a + (b - a) * fx;
+    final cd = c + (d - c) * fx;
+    return ab + (cd - ab) * fy;
+  }
 
   @override
   void paint(Canvas canvas, Size size) {
-    // ── 1. Background ─────────────────────────────────────
-    canvas.drawRect(
-      Offset.zero & size,
-      Paint()..color = _kBgColor,
-    );
+    if (size.isEmpty) return;
 
-    // Optional: very subtle radial vignette / light haze from upper-left
-    final Paint vignette = Paint()
-      ..shader = RadialGradient(
-        center: const Alignment(-1.2, -1.0),
-        radius: 1.6,
-        colors: const [
-          Color(0x08C5CAE9), // very faint blue-indigo tint
-          Color(0x00EEEEF2),
-        ],
-      ).createShader(Offset.zero & size);
-    canvas.drawRect(Offset.zero & size, vignette);
+    // Background
+    canvas.drawRect(Offset.zero & size, Paint()..color = _kBgColor);
 
-    // ── 2. Micro-dots ─────────────────────────────────────
-    final Paint dotPaint = Paint()
-      ..color = _kMicroDotColor
-      ..style = PaintingStyle.fill;
+    final w = size.width;
+    final h = size.height;
+    final aspect = w / h;
 
-    for (final md in microDots) {
-      canvas.drawCircle(
-        Offset(md.x * size.width, md.y * size.height),
-        md.size * 0.6,
-        dotPaint,
+    final driftSpeed = elapsed * 0.2;
+    final breathCycle = sin(elapsed * 0.8);
+    final colorTime = elapsed * 1.2;
+
+    final hx = haloNX;
+    final hy = haloNY;
+    final haloBaseRadius = 0.25 + breathCycle * 0.02;
+
+    final paint = Paint()..style = PaintingStyle.fill;
+
+    for (int i = 0; i < count; i++) {
+      var nx = baseX[i];
+      var ny = baseY[i];
+
+      final wx = (nx - 0.5) * 20.0;
+      final wy = (ny - 0.5) * 12.0;
+      final dx = sin(driftSpeed + wy * 0.5) + sin(driftSpeed * 0.5 + wy * 2.0);
+      final dy = cos(driftSpeed + wx * 0.5) + cos(driftSpeed * 0.5 + wx * 2.0);
+      nx += dx * 0.015;
+      ny += dy * 0.015;
+
+      final relX = (nx - hx) * aspect;
+      final relY = ny - hy;
+      final distFromHalo = sqrt(relX * relX + relY * relY);
+      final angleToHalo = atan2(relY, relX);
+
+      final shapeFactor = _noise(angleToHalo * 2.0, elapsed * 0.1);
+      final haloRadius = haloBaseRadius + shapeFactor * 0.03;
+      const rimWidth = 0.20;
+      final rimInfluence = _smoothstep(
+        rimWidth,
+        0.0,
+        (distFromHalo - haloRadius).abs(),
       );
-    }
 
-    // ── 3. Dash particles ─────────────────────────────────
-    // Sort by scale so back-particles are drawn first (painter's algorithm)
-    final sorted = List.of(dashes)
-      ..sort((a, b) => a.scale.compareTo(b.scale));
+      final invDist = 1.0 / (distFromHalo + 0.0001);
+      final pushX = relX * invDist;
+      final pushY = relY * invDist;
+      final pushAmt = (breathCycle * 0.6 + 0.5) * 0.04;
+      nx += pushX * pushAmt * rimInfluence / aspect;
+      ny += pushY * pushAmt * rimInfluence;
 
-    for (final d in sorted) {
-      // Skip particles off-screen (performance)
-      if (d.sx < -80 || d.sx > size.width + 80 ||
-          d.sy < -80 || d.sy > size.height + 80) continue;
+      final sx = nx * w;
+      final sy = ny * h;
 
-      // Fade out particles that are far to the right / bottom
-      // (the original has very few particles there)
-      final double normX = d.sx / size.width;
-      final double normY = d.sy / size.height;
-      double screenFade = 1.0;
-      if (normX > 0.5) screenFade *= (1 - (normX - 0.5) * 1.6).clamp(0, 1);
-      if (normY > 0.7) screenFade *= (1 - (normY - 0.7) * 2.5).clamp(0, 1);
+      if (sx < -20 || sx > w + 20 || sy < -20 || sy > h + 20) continue;
 
-      final double alpha = (0.55 + d.scale * 0.35) * screenFade;
-      if (alpha < 0.01) continue;
+      final baseSize = 1.0;
+      final currentSize = baseSize + rimInfluence * 3.5;
+      final pw = currentSize * 1.3;
+      final ph = currentSize * 0.7;
 
-      final double scaledLen = d.length * d.scale;
-      final double scaledWidth = d.width * d.scale;
+      if (pw < 0.8) continue;
 
-      final double halfLen = scaledLen * 0.5;
-      final double cos_ = cos(d.tiltAngle);
-      final double sin_ = sin(d.tiltAngle);
+      // Color — spatial gradient
+      final cx = (nx - 0.5) * 20.0;
+      final cy = (ny - 0.5) * 12.0;
+      final g1 = sin(cx * 0.18 + cy * 0.12 + colorTime) * 0.5 + 0.5;
+      final g2 = sin(cx * 0.12 - cy * 0.15 + colorTime * 0.9) * 0.5 + 0.5;
+      final g3 = cos(cy * 0.2 + cx * 0.08 - colorTime * 0.7) * 0.5 + 0.5;
+      final g4 =
+          sin(sqrt(cx * cx + cy * cy) * 0.12 + colorTime * 0.6) * 0.5 + 0.5;
 
-      final Offset p1 = Offset(d.sx - cos_ * halfLen, d.sy - sin_ * halfLen);
-      final Offset p2 = Offset(d.sx + cos_ * halfLen, d.sy + sin_ * halfLen);
+      final s1 = _smoothstep(0.2, 0.8, g1);
+      var r = 0.19 + (0.99 - 0.19) * s1;
+      var g = 0.52 + (0.25 - 0.52) * s1;
+      var b = 1.0 + (0.24 - 1.0) * s1;
 
-      final Paint p = Paint()
-        ..color = d.color.withValues(alpha: alpha)
-        ..strokeWidth = scaledWidth
-        ..strokeCap = StrokeCap.round
-        ..style = PaintingStyle.stroke;
+      final s2 = _smoothstep(0.35, 0.65, g2);
+      r += (0.98 - r) * s2;
+      g += (0.74 - g) * s2;
+      b += (0.02 - b) * s2;
 
-      canvas.drawLine(p1, p2, p);
+      final s3 = _smoothstep(0.4, 0.7, g3);
+      r += (0.0 - r) * s3;
+      g += (0.73 - g) * s3;
+      b += (0.36 - b) * s3;
+
+      final s4 = _smoothstep(0.5, 0.8, g4) * 0.4;
+      r += (0.55 - r) * s4;
+      g += (0.36 - g) * s4;
+      b += (0.80 - b) * s4;
+
+      final alpha = 0.12 + 0.83 * _smoothstep(0.0, 0.5, rimInfluence);
+
+      paint.color = Color.fromRGBO(
+        (r * 255).round().clamp(0, 255),
+        (g * 255).round().clamp(0, 255),
+        (b * 255).round().clamp(0, 255),
+        alpha,
+      );
+
+      canvas.save();
+      canvas.translate(sx, sy);
+      canvas.rotate(angleToHalo);
+      canvas.drawRRect(
+        RRect.fromRectAndRadius(
+          Rect.fromCenter(center: Offset.zero, width: pw, height: ph),
+          Radius.circular(ph / 2),
+        ),
+        paint,
+      );
+      canvas.restore();
     }
   }
 
