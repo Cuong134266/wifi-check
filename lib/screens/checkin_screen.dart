@@ -233,8 +233,11 @@ class _CheckinScreenState extends State<CheckinScreen>
       _wifiInfo = wifiInfo;
       if (verifyResult['verified'] == true) {
         _wifiStatusText = 'Đã sẵn sàng điểm danh...';
-        _wifiSubText =
-            'Bạn đang kết nối ${wifiInfo['ssid']}. Điểm danh ngay trên màn hình này.';
+        if (kIsWeb) {
+          _wifiSubText = 'Điểm danh trên Web sẻ sử dụng định vị GPS thay vì WiFi.';
+        } else {
+          _wifiSubText = 'Bạn đang kết nối ${wifiInfo['ssid']}. Điểm danh ngay trên màn hình này.';
+        }
         _isWifiValid = true;
       } else {
         _wifiStatusText = 'Mạng không hợp lệ';
@@ -275,8 +278,11 @@ class _CheckinScreenState extends State<CheckinScreen>
           setState(() {
             if (verifyResult['verified']) {
               _wifiStatusText = 'Đã sẵn sàng điểm danh...';
-              _wifiSubText =
-                  'Bạn đang kết nối ${_wifiInfo['ssid']}. Điểm danh ngay trên màn hình này.';
+              if (kIsWeb) {
+                _wifiSubText = 'Điểm danh trên Web sẻ sử dụng định vị GPS thay vì WiFi.';
+              } else {
+                _wifiSubText = 'Bạn đang kết nối ${_wifiInfo['ssid']}. Điểm danh ngay trên màn hình này.';
+              }
               _isWifiValid = true;
             } else {
               _wifiStatusText = 'Mạng không hợp lệ';
@@ -310,6 +316,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   Future<bool> _ensureLoggedIn({bool silent = false}) async {
     if (_user != null) return true;
+    if (_isLoggingIn) return false;
 
     setState(() => _isLoggingIn = true);
     try {
@@ -332,7 +339,10 @@ class _CheckinScreenState extends State<CheckinScreen>
       if (kIsWeb) {
         // WEB: Mở dialog chứa nút đăng nhập Google chính thức
         _webLoginCompleter = Completer<bool>();
+        bool dialogIsOpen = false;
+        
         if (mounted) {
+          dialogIsOpen = true;
           showDialog(
             context: context,
             barrierDismissible: true,
@@ -351,6 +361,7 @@ class _CheckinScreenState extends State<CheckinScreen>
               ),
             ),
           ).then((_) {
+            dialogIsOpen = false;
             // User đóng dialog mà chưa đăng nhập
             if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
               _webLoginCompleter!.complete(false);
@@ -359,19 +370,22 @@ class _CheckinScreenState extends State<CheckinScreen>
         }
         final result = await _webLoginCompleter!.future;
         _webLoginCompleter = null;
-        // Đóng dialog nếu vẫn đang mở
-        if (mounted && Navigator.canPop(context)) {
-          Navigator.pop(context);
+        
+        // Đóng dialog nếu vẫn đang mở (nghĩa là đăng nhập thành công và onSignInResult gọi complete(true))
+        if (dialogIsOpen && mounted) {
+          Navigator.of(context, rootNavigator: true).pop();
         }
         return result;
       } else {
         // NATIVE: Dùng authenticate() bình thường
         final authedAccount = await GoogleSignIn.instance.authenticate();
+        if (authedAccount == null) return false;
         return await _handleGoogleAccount(authedAccount);
       }
     } catch (e) {
-      if (!e.toString().contains("cancel"))
+      if (!e.toString().contains("cancel") && !e.toString().contains("Popup closed")) {
         _showErrorPopup('Đăng nhập thất bại: $e');
+      }
       return false;
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
