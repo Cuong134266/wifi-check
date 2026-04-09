@@ -12,6 +12,7 @@ import '../services/device_service.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/checkin_bottom_sheet.dart';
+import '../widgets/error_bottom_sheet.dart';
 import '../services/web_sign_in.dart' as web;
 
 class CheckinScreen extends StatefulWidget {
@@ -292,14 +293,14 @@ class _CheckinScreenState extends State<CheckinScreen>
         return true;
       } else {
         await GoogleSignIn.instance.signOut();
-        _showSnackbar(result['error'] ?? 'Lỗi xác thực');
+        _showErrorPopup(result['error'] ?? 'Lỗi xác thực');
         if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
           _webLoginCompleter!.complete(false);
         }
         return false;
       }
     } catch (e) {
-      _showSnackbar('Đăng nhập thất bại: $e');
+      _showErrorPopup('Đăng nhập thất bại: $e');
       if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
         _webLoginCompleter!.complete(false);
       }
@@ -370,7 +371,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       }
     } catch (e) {
       if (!e.toString().contains("cancel"))
-        _showSnackbar('Đăng nhập thất bại: $e');
+        _showErrorPopup('Đăng nhập thất bại: $e');
       return false;
     } finally {
       if (mounted) setState(() => _isLoggingIn = false);
@@ -384,7 +385,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       }
 
       if (!_isWifiValid) {
-        _showSnackbar('Bạn phải kết nối đúng WiFi công ty (SSID, BSSID, IP) để điểm danh.');
+        _showErrorPopup('Bạn phải kết nối đúng WiFi công ty (SSID, BSSID, IP) để điểm danh.');
         return false;
       }
 
@@ -424,7 +425,7 @@ class _CheckinScreenState extends State<CheckinScreen>
           _wifiSubText = 'Lúc ${res['checkin_time']}';
           return true;
         } else {
-          _showSnackbar(res['error'] ?? 'Lỗi không xác định');
+          _showErrorPopup(res['error'] ?? 'Lỗi không xác định');
           return false;
         }
       }
@@ -434,7 +435,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         _wifiStatusText = 'Đã điểm danh hôm nay';
         return true;
       } else {
-        _showSnackbar(e.toString());
+        _showErrorPopup(e.toString());
         return false;
       }
     }
@@ -546,15 +547,13 @@ class _CheckinScreenState extends State<CheckinScreen>
     if (mounted) setState(() => _isLoadingRanking = false);
   }
 
-  void _showSnackbar(String msg) {
+  void _showErrorPopup(String msg) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(msg, style: const TextStyle(color: Colors.white)),
-        behavior: SnackBarBehavior.floating,
-        backgroundColor: Colors.black87,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-      ),
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => ErrorBottomSheet(message: msg),
     );
   }
 

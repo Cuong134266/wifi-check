@@ -320,35 +320,58 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        Container(
-          width: 72,
-          height: 72,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: const Color(0xFFFEE2E2),
-            border: Border.all(color: const Color(0xFFFCA5A5), width: 2),
+        Image.asset(
+          'assets/images/imgClose.png',
+          width: 140,
+          height: 140,
+          fit: BoxFit.contain,
+        ),
+        const SizedBox(height: 20),
+        const Text(
+          'Checkin thất bại',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w800,
+            color: Color(0xFF1F2937),
+            fontFamily: 'Inter',
+            height: 1.2,
           ),
-          child: const Center(
-            child: Icon(
-              Icons.close_rounded,
-              color: Color(0xFFEF4444),
-              size: 40,
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'Vui lòng kiểm tra lại kết nối mạng hoặc liên hệ Admin',
+          textAlign: TextAlign.center,
+          style: TextStyle(
+            fontSize: 15,
+            color: Color(0xFF9CA3AF),
+            fontFamily: 'Inter',
+          ),
+        ),
+        const SizedBox(height: 32),
+        SizedBox(
+          width: double.infinity,
+          height: 52,
+          child: ElevatedButton(
+            onPressed: () => Navigator.pop(context),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFF000000),
+              foregroundColor: Colors.white,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(26),
+              ),
+              elevation: 0,
+            ),
+            child: const Text(
+              'OK',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.w600,
+                fontFamily: 'Inter',
+                letterSpacing: 0.5,
+              ),
             ),
           ),
-        ),
-        const SizedBox(height: 16),
-        const Text(
-          'Có lỗi xảy ra',
-          style: TextStyle(
-            fontSize: 20,
-            fontWeight: FontWeight.w700,
-            color: Color(0xFF1F2937),
-          ),
-        ),
-        const SizedBox(height: 6),
-        const Text(
-          'Vui lòng thử lại sau',
-          style: TextStyle(fontSize: 14, color: Color(0xFF6B7280)),
         ),
       ],
     );
