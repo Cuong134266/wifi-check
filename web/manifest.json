@@ -1,11 +1,11 @@
 {
-    "name": "wifi_checkin_flutter",
-    "short_name": "wifi_checkin_flutter",
+    "name": "WiFi Checkin",
+    "short_name": "Checkin",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",
     "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "description": "Ứng dụng điểm danh thông minh",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [
