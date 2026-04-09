@@ -397,7 +397,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         } catch (_) {} // Nếu lỗi mạng thì dùng settings cũ
       }
 
-      // Lấy GPS (bổ sung, không bắt buộc)
+      // Lấy GPS — BẮT BUỘC
       final freshLocation = await LocationService.getInfo(_settings);
       if (freshLocation['available'] == true) {
         _locationInfo = freshLocation;
@@ -410,10 +410,16 @@ class _CheckinScreenState extends State<CheckinScreen>
       final freshIp = await PublicIpService.getPublicIp(forceRefresh: true);
       _publicIp = freshIp;
 
-      // Kiểm tra Public IP khớp với công ty
+      // GATE 1: Kiểm tra Public IP khớp với công ty
       final ipResult = await PublicIpService.verify(_settings);
       if (ipResult['verified'] != true && ipResult['skipped'] != true) {
         _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
+        return false;
+      }
+
+      // GATE 2: Kiểm tra GPS trong bán kính công ty
+      if (!_isLocationValid) {
+        _showErrorPopup('Bạn phải ở trong phạm vi công ty (bán kính 2km) và cấp quyền Vị trí để điểm danh.');
         return false;
       }
 
