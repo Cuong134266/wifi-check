@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 
 class ApiService {
@@ -11,9 +12,10 @@ class ApiService {
 
   static String getUrl() => _baseUrl;
 
-  /// Gửi request tới Google Apps Script với xử lý redirect thủ công.
-  /// Google Apps Script luôn trả 302 redirect cho POST requests,
-  /// mà thư viện http của Dart không tự follow redirect với POST.
+  /// Gửi request tới Google Apps Script.
+  /// ─ Web: dùng POST thường, browser tự follow 302 redirect.
+  /// ─ Native: dùng POST + manual follow redirect (vì Dart IOClient
+  ///   không tự chuyển POST→GET khi gặp 302).
   static Future<Map<String, dynamic>> request(String action, [Map<String, dynamic>? data]) async {
     if (_baseUrl.isEmpty) {
       throw Exception('API URL chưa được cấu hình.');
@@ -27,24 +29,35 @@ class ApiService {
 
     final client = http.Client();
     try {
-      // Bước 1: POST tới Google Apps Script
-      final postRequest = http.Request('POST', Uri.parse(url));
-      postRequest.headers['Content-Type'] = 'text/plain';
-      postRequest.body = jsonEncode(payload);
-      postRequest.followRedirects = false;
+      http.Response response;
 
-      final streamedResponse = await client.send(postRequest);
-      var response = await http.Response.fromStream(streamedResponse);
+      if (kIsWeb) {
+        // ═══ WEB: Browser tự xử lý redirect, CORS ═══
+        // Dùng POST đơn giản — browser sẽ follow 302 redirect
+        // và trả về response cuối cùng (200 OK).
+        response = await client.post(
+          Uri.parse(url),
+          headers: {'Content-Type': 'text/plain'},
+          body: jsonEncode(payload),
+        );
+      } else {
+        // ═══ NATIVE: Manual redirect handling ═══
+        final postRequest = http.Request('POST', Uri.parse(url));
+        postRequest.headers['Content-Type'] = 'text/plain';
+        postRequest.body = jsonEncode(payload);
+        postRequest.followRedirects = false;
 
-      // Bước 2: Manually follow 302/303 redirect (tối đa 5 lần)
-      int redirectCount = 0;
-      while ((response.statusCode == 301 || response.statusCode == 302 || response.statusCode == 303) && redirectCount < 5) {
-        final redirectUrl = response.headers['location'];
-        if (redirectUrl == null) break;
-        
-        // Trên Web: dùng GET đơn giản thay vì Request với followRedirects
-        response = await client.get(Uri.parse(redirectUrl));
-        redirectCount++;
+        final streamedResponse = await client.send(postRequest);
+        response = await http.Response.fromStream(streamedResponse);
+
+        // Manually follow 302/303 redirect (tối đa 5 lần)
+        int redirectCount = 0;
+        while ((response.statusCode == 301 || response.statusCode == 302 || response.statusCode == 303) && redirectCount < 5) {
+          final redirectUrl = response.headers['location'];
+          if (redirectUrl == null) break;
+          response = await client.get(Uri.parse(redirectUrl));
+          redirectCount++;
+        }
       }
 
       if (response.statusCode >= 200 && response.statusCode < 300) {
@@ -112,4 +125,3 @@ class ApiService {
     });
   }
 }
-
