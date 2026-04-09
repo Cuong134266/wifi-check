@@ -398,16 +398,25 @@ class _CheckinScreenState extends State<CheckinScreen>
         return false;
       }
 
-      if (!_isWifiValid) {
-        _showErrorPopup('Bạn phải kết nối đúng WiFi công ty (SSID, BSSID, IP) để điểm danh.');
-        return false;
-      }
-
-      // Lấy GPS tươi ngay trước khi gửi (tránh gửi dữ liệu cũ/rỗng)
+      // Lấy GPS tươi ngay trước khi gửi
       final freshLocation = await LocationService.getInfo(_settings);
       if (freshLocation['available'] == true) {
         _locationInfo = freshLocation;
         _isLocationValid = freshLocation['in_range'] == true;
+      } else {
+        _isLocationValid = false;
+      }
+
+      if (kIsWeb) {
+        if (!_isLocationValid) {
+          _showErrorPopup('Bạn phải nằm trong bán kính công ty và cấp quyền Vị Trí (GPS) trên trình duyệt để điểm danh bản Web.');
+          return false;
+        }
+      } else {
+        if (!_isWifiValid) {
+          _showErrorPopup('Bạn phải kết nối đúng WiFi công ty (SSID, BSSID, IP) để điểm danh.');
+          return false;
+        }
       }
 
       // Đảm bảo device info đã sẵn sàng
