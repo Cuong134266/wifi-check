@@ -383,6 +383,20 @@ class _CheckinScreenState extends State<CheckinScreen>
         return false;
       }
 
+      // Re-sync settings từ server để đảm bảo có office_public_ip mới nhất
+      if (_user != null) {
+        try {
+          final freshResult = await ApiService.loginAndSync(
+            _user!['email'], _user!['name'] ?? '', _user!['avatar'] ?? '', _deviceInfo,
+          );
+          if (freshResult['success'] == true) {
+            final freshSettings = (freshResult['settings'] ?? {}) as Map<String, dynamic>;
+            _settings = freshSettings;
+            _saveUser(_user!, freshSettings);
+          }
+        } catch (_) {} // Nếu lỗi mạng thì dùng settings cũ
+      }
+
       // Lấy GPS (bổ sung, không bắt buộc)
       final freshLocation = await LocationService.getInfo(_settings);
       if (freshLocation['available'] == true) {
