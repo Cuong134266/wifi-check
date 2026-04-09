@@ -119,6 +119,7 @@ class ApiService {
       'latitude': locationData['latitude']?.toString() ?? '',
       'longitude': locationData['longitude']?.toString() ?? '',
       'gps_distance': locationData['distance']?.toString() ?? '',
+      'public_ip': locationData['public_ip']?.toString() ?? '',
       'checkin_method': locationData['checkin_method']?.toString() ?? ''
     });
   }

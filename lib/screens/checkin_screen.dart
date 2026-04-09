@@ -8,6 +8,7 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/ether_background.dart';
 import '../services/wifi_service.dart';
+import '../services/public_ip_service.dart';
 import '../services/device_service.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
@@ -44,9 +45,13 @@ class _CheckinScreenState extends State<CheckinScreen>
   Map<String, dynamic> _deviceInfo = {};
   bool _isCheckingIn = false;
   bool _isCheckedIn = false;
-  String _wifiStatusText = 'Đang kiểm tra WiFi...';
-  String _wifiSubText = 'Hệ thống sẽ ghi nhận khi có kết nối mạng công ty.';
+  String _wifiStatusText = 'Đang kiểm tra mạng...';
+  String _wifiSubText = 'Hệ thống sẽ ghi nhận khi kết nối mạng công ty.';
   bool _isWifiValid = false;
+
+  // --- Public IP state ---
+  String _publicIp = '';
+  bool _isIpValid = false;
   bool _isLoggingIn = false;
 
   // --- Location state ---
@@ -83,10 +88,10 @@ class _CheckinScreenState extends State<CheckinScreen>
         });
     });
 
-    // Tự động kiểm tra lại WiFi mỗi 5 giây
+    // Tự động kiểm tra lại mạng mỗi 5 giây
     _wifiTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (mounted && !_isCheckedIn) {
-        _checkWifi();
+        _checkNetwork();
         _checkLocation();
       }
     });
@@ -128,7 +133,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     _deviceInfo = await DeviceService.getInfo();
     _loadCache();
     await _restoreCachedUser(); // Khôi phục tài khoản đã lưu trước đó
-    await _checkWifi();
+    await _checkNetwork();
     await _checkLocation();
     
     // Nếu chưa có user từ cache, thử đăng nhập ngầm qua Google
@@ -210,38 +215,34 @@ class _CheckinScreenState extends State<CheckinScreen>
     await prefs.setString(key, jsonEncode(data));
   }
 
-  Future<void> _checkWifi() async {
+  Future<void> _checkNetwork() async {
+    // Bước 1: Vẫn lấy WiFi info (dùng cho logging trên Native)
     final wifiInfo = await WifiService.getInfo();
     if (!mounted) return;
+    _wifiInfo = wifiInfo;
 
-    if (!wifiInfo['connected']) {
-      setState(() {
-        _wifiInfo = wifiInfo;
-        _wifiStatusText = 'Chưa kết nối mạng nội bộ';
-        _wifiSubText =
-            wifiInfo['error'] ??
-            'Hệ thống sẽ ghi nhận khi kết nối mạng công ty.';
-        _isWifiValid = false;
-      });
-      return;
-    }
+    // Bước 2: Lấy Public IP và verify với IP công ty
+    final ipResult = await PublicIpService.verify(_settings);
+    if (!mounted) return;
 
-    // Đọc được WiFi rồi → tiến hành VERIFY đúng WiFi công ty
-    final verifyResult = WifiService.verify(wifiInfo, _settings);
-    
     setState(() {
-      _wifiInfo = wifiInfo;
-      if (verifyResult['verified'] == true) {
+      _publicIp = ipResult['public_ip'] ?? '';
+
+      if (ipResult['skipped'] == true) {
+        // Chưa cấu hình office_public_ip → cho qua, chờ admin cấu hình
+        _wifiStatusText = 'Chưa cấu hình IP công ty';
+        _wifiSubText = 'Admin cần thêm office_public_ip vào Google Sheet Settings.';
+        _isIpValid = true;
+        _isWifiValid = true;
+      } else if (ipResult['verified'] == true) {
         _wifiStatusText = 'Đã sẵn sàng điểm danh...';
-        if (kIsWeb) {
-          _wifiSubText = 'Điểm danh trên Web sẻ sử dụng định vị GPS thay vì WiFi.';
-        } else {
-          _wifiSubText = 'Bạn đang kết nối ${wifiInfo['ssid']}. Điểm danh ngay trên màn hình này.';
-        }
+        _wifiSubText = 'IP mạng: $_publicIp ✓ Khớp mạng công ty.';
+        _isIpValid = true;
         _isWifiValid = true;
       } else {
         _wifiStatusText = 'Mạng không hợp lệ';
-        _wifiSubText = (verifyResult['reasons'] as List).join(' • ');
+        _wifiSubText = ipResult['reason'] ?? 'IP mạng không khớp với công ty.';
+        _isIpValid = false;
         _isWifiValid = false;
       }
     });
@@ -273,24 +274,8 @@ class _CheckinScreenState extends State<CheckinScreen>
         _loadHistoryBg();
         _loadRankingBg();
 
-        if (_wifiInfo['connected'] == true) {
-          final verifyResult = WifiService.verify(_wifiInfo, _settings);
-          setState(() {
-            if (verifyResult['verified']) {
-              _wifiStatusText = 'Đã sẵn sàng điểm danh...';
-              if (kIsWeb) {
-                _wifiSubText = 'Điểm danh trên Web sẻ sử dụng định vị GPS thay vì WiFi.';
-              } else {
-                _wifiSubText = 'Bạn đang kết nối ${_wifiInfo['ssid']}. Điểm danh ngay trên màn hình này.';
-              }
-              _isWifiValid = true;
-            } else {
-              _wifiStatusText = 'Mạng không hợp lệ';
-              _wifiSubText = (verifyResult['reasons'] as List).join(' • ');
-              _isWifiValid = false;
-            }
-          });
-        }
+        // Re-verify Public IP sau khi có settings mới từ server
+        _checkNetwork();
 
         // Nếu đang chờ web login completer, giải phóng nó
         if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
@@ -398,7 +383,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         return false;
       }
 
-      // Lấy GPS tươi ngay trước khi gửi
+      // Lấy GPS (bổ sung, không bắt buộc)
       final freshLocation = await LocationService.getInfo(_settings);
       if (freshLocation['available'] == true) {
         _locationInfo = freshLocation;
@@ -407,16 +392,15 @@ class _CheckinScreenState extends State<CheckinScreen>
         _isLocationValid = false;
       }
 
-      if (kIsWeb) {
-        if (!_isLocationValid) {
-          _showErrorPopup('Bạn phải nằm trong bán kính công ty và cấp quyền Vị Trí (GPS) trên trình duyệt để điểm danh bản Web.');
-          return false;
-        }
-      } else {
-        if (!_isWifiValid) {
-          _showErrorPopup('Bạn phải kết nối đúng WiFi công ty (SSID, BSSID, IP) để điểm danh.');
-          return false;
-        }
+      // Lấy Public IP tươi nhất
+      final freshIp = await PublicIpService.getPublicIp(forceRefresh: true);
+      _publicIp = freshIp;
+
+      // Kiểm tra Public IP khớp với công ty
+      final ipResult = await PublicIpService.verify(_settings);
+      if (ipResult['verified'] != true && ipResult['skipped'] != true) {
+        _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
+        return false;
       }
 
       // Đảm bảo device info đã sẵn sàng
@@ -424,13 +408,19 @@ class _CheckinScreenState extends State<CheckinScreen>
         _deviceInfo = await DeviceService.getInfo();
       }
 
+      // Xác định phương thức checkin
+      String checkinMethod = 'public_ip';
+      if (_isLocationValid) checkinMethod += '+gps';
+      if (!kIsWeb && _wifiInfo['ssid'] != null && _wifiInfo['ssid'] != 'Web Browser') {
+        checkinMethod += '+wifi';
+      }
+
       final res = await ApiService.checkin(_user!['email'], _wifiInfo, _deviceInfo, {
         'latitude': _locationInfo['latitude']?.toString() ?? '',
         'longitude': _locationInfo['longitude']?.toString() ?? '',
         'distance': _locationInfo['distance']?.toString() ?? '',
-        'checkin_method': _isWifiValid
-            ? (_isLocationValid ? 'wifi+gps' : 'wifi')
-            : 'gps',
+        'public_ip': _publicIp,
+        'checkin_method': checkinMethod,
       });
 
       if (res['success'] == true) {
@@ -466,7 +456,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   Future<bool> _performCheckinWithRefresh() async {
     // Refresh ngầm trong lúc hiển thị Skeleton Loading
-    await _checkWifi();
+    await _checkNetwork();
     await _checkLocation();
     
     if (!mounted) return false;
@@ -614,7 +604,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       _user = null;
       _isCheckedIn = false;
       _showHistory = false;
-      _checkWifi();
+      _checkNetwork();
     });
   }
 
