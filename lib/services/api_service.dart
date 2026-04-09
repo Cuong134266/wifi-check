@@ -13,17 +13,14 @@ class ApiService {
   static String getUrl() => _baseUrl;
 
   /// Gửi request tới Google Apps Script.
-  /// ─ Web: dùng POST thường, browser tự follow 302 redirect.
-  /// ─ Native: dùng POST + manual follow redirect (vì Dart IOClient
-  ///   không tự chuyển POST→GET khi gặp 302).
+  /// ─ Web: dùng GET với data gói trong URL params
+  ///   (POST bị browser block khi GAS redirect 302 cross-origin).
+  /// ─ Native: dùng POST + manual follow redirect.
   static Future<Map<String, dynamic>> request(String action, [Map<String, dynamic>? data]) async {
     if (_baseUrl.isEmpty) {
       throw Exception('API URL chưa được cấu hình.');
     }
 
-    final separator = _baseUrl.contains('?') ? '&' : '?';
-    final url = '$_baseUrl${separator}action=$action';
-    
     final payload = data ?? {};
     payload['action'] = action;
 
@@ -32,16 +29,17 @@ class ApiService {
       http.Response response;
 
       if (kIsWeb) {
-        // ═══ WEB: Browser tự xử lý redirect, CORS ═══
-        // Dùng POST đơn giản — browser sẽ follow 302 redirect
-        // và trả về response cuối cùng (200 OK).
-        response = await client.post(
-          Uri.parse(url),
-          headers: {'Content-Type': 'text/plain'},
-          body: jsonEncode(payload),
-        );
+        // ═══ WEB: Dùng GET — browser tự follow redirect, CORS OK ═══
+        // Google Apps Script block POST cross-origin redirect,
+        // nhưng GET hoạt động hoàn hảo.
+        final queryParams = payload.map((k, v) => MapEntry(k, v.toString()));
+        final uri = Uri.parse(_baseUrl).replace(queryParameters: queryParams);
+        response = await client.get(uri);
       } else {
-        // ═══ NATIVE: Manual redirect handling ═══
+        // ═══ NATIVE: POST + manual redirect ═══
+        final separator = _baseUrl.contains('?') ? '&' : '?';
+        final url = '$_baseUrl${separator}action=$action';
+
         final postRequest = http.Request('POST', Uri.parse(url));
         postRequest.headers['Content-Type'] = 'text/plain';
         postRequest.body = jsonEncode(payload);
