@@ -2,9 +2,9 @@ import 'package:geolocator/geolocator.dart';
 
 class LocationService {
   // ── Tọa độ văn phòng (cấu hình mặc định, có thể override từ settings) ──
-  static const double defaultOfficeLat = 21.0285; // Hà Nội mặc định
-  static const double defaultOfficeLng = 105.8542;
-  static const double defaultRadiusMeters = 200; // Bán kính cho phép (mét)
+  static const double defaultOfficeLat = 21.0078017;
+  static const double defaultOfficeLng = 105.8071089;
+  static const double defaultRadiusMeters = 2000; // Bán kính cho phép (2km)
 
   /// Kiểm tra & xin quyền location
   static Future<bool> ensurePermission() async {
