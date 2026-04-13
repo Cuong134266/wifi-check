@@ -23,21 +23,26 @@ class WifiService {
     final String officeIpPrefix = settings['office_ip_prefix'] ?? '';
 
     if (officeSsid.isNotEmpty) {
-      if (wifiInfo['ssid'] != officeSsid) {
+      final validSsids = officeSsid.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      if (validSsids.isNotEmpty && !validSsids.contains(wifiInfo['ssid'])) {
         verified = false;
         reasons.add('WiFi sai (${wifiInfo['ssid']})');
       }
     }
 
     if (officeBssid.isNotEmpty && wifiInfo['bssid'] != '') {
-      if (wifiInfo['bssid'].toString().toLowerCase() != officeBssid.toLowerCase()) {
+      final currentBssid = wifiInfo['bssid'].toString().toLowerCase();
+      final validBssids = officeBssid.split(',').map((e) => e.trim().toLowerCase()).where((e) => e.isNotEmpty).toList();
+      if (validBssids.isNotEmpty && !validBssids.contains(currentBssid)) {
         verified = false;
         reasons.add('BSSID router không khớp');
       }
     }
 
     if (officeIpPrefix.isNotEmpty && wifiInfo['ip'] != '') {
-      if (!wifiInfo['ip'].toString().startsWith(officeIpPrefix)) {
+      final currentIp = wifiInfo['ip'].toString();
+      final validIpPrefixes = officeIpPrefix.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+      if (validIpPrefixes.isNotEmpty && !validIpPrefixes.any((prefix) => currentIp.startsWith(prefix))) {
         verified = false;
         reasons.add('Lớp mạng IP sai');
       }

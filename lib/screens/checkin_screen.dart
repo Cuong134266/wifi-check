@@ -136,14 +136,13 @@ class _CheckinScreenState extends State<CheckinScreen>
     await _checkNetwork();
     await _checkLocation();
     
-    // Nếu chưa có user từ cache, thử đăng nhập ngầm qua Google
-    if (_user == null) {
-      _ensureLoggedIn(silent: true);
-    } else {
-      // Đã có user từ cache, tải dữ liệu ngầm
+    // Nếu đã có user từ cache, tải dữ liệu ngầm
+    if (_user != null) {
       _loadHistoryBg();
       _loadRankingBg();
     }
+    // Nếu chưa có user: KHÔNG tự đăng nhập ngầm.
+    // Người dùng phải tự bấm nút để chọn tài khoản.
   }
 
   /// Khôi phục tài khoản đã lưu từ SharedPreferences
@@ -299,28 +298,14 @@ class _CheckinScreenState extends State<CheckinScreen>
     }
   }
 
-  Future<bool> _ensureLoggedIn({bool silent = false}) async {
+  Future<bool> _ensureLoggedIn() async {
     if (_user != null) return true;
     if (_isLoggingIn) return false;
 
     setState(() => _isLoggingIn = true);
     try {
-      GoogleSignInAccount? account;
-      
-      // Bước 1: Thử đăng nhập nhẹ (dùng token cũ nếu có)
-      account = await GoogleSignIn.instance.attemptLightweightAuthentication();
-      
-      if (account != null) {
-        return await _handleGoogleAccount(account);
-      }
-
-      // Bước 2: Nếu silent mode thì dừng ở đây
-      if (silent) {
-        if (mounted) setState(() => _isLoggingIn = false);
-        return false;
-      }
-
-      // Bước 3: Đăng nhập tương tác
+      // Đăng nhập tương tác: yêu cầu Google hiện bảng chọn tài khoản
+      // (authenticate() trên v7 = Credential Manager / Account Picker)
       if (kIsWeb) {
         // WEB: Mở dialog chứa nút đăng nhập Google chính thức
         _webLoginCompleter = Completer<bool>();
@@ -619,7 +604,12 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   Future<void> _logout() async {
-    await GoogleSignIn.instance.signOut();
+    try {
+      await GoogleSignIn.instance.disconnect();
+    } catch (e) {
+      await GoogleSignIn.instance.signOut();
+    }
+    
     setState(() {
       _user = null;
       _isCheckedIn = false;

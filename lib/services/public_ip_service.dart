@@ -58,14 +58,15 @@ class PublicIpService {
       };
     }
 
-    final matched = currentIp == officeIp;
+    final validIps = officeIp.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final matched = validIps.contains(currentIp);
     return {
       'verified': matched,
       'public_ip': currentIp,
       'office_ip': officeIp,
       'reason': matched 
           ? 'IP khớp với mạng công ty' 
-          : 'IP không khớp ($currentIp ≠ $officeIp)',
+          : 'IP không khớp ($currentIp không nằm trong $officeIp)',
     };
   }
 }
