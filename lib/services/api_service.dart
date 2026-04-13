@@ -61,8 +61,9 @@ class ApiService {
       if (response.statusCode >= 200 && response.statusCode < 300) {
         final text = response.body.trim();
         try {
-          final result = jsonDecode(text);
-          if (result is Map<String, dynamic>) {
+          final decoded = jsonDecode(text);
+          if (decoded is Map) {
+            final result = Map<String, dynamic>.from(decoded);
             if (result['success'] == false && result['error'] != null) {
               throw Exception(result['error']);
             }

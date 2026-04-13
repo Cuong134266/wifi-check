@@ -259,12 +259,14 @@ class _CheckinScreenState extends State<CheckinScreen>
 
       if (result['success'] == true) {
         if (!mounted) return false;
-        final employee = result['employee'] as Map<String, dynamic>;
-        final settings = (result['settings'] ?? {}) as Map<String, dynamic>;
+        final employee = Map<String, dynamic>.from(result['employee'] as Map);
+        final settings = result['settings'] != null 
+            ? Map<String, dynamic>.from(result['settings'] as Map) 
+            : <String, dynamic>{};
         setState(() {
           _user = employee;
           _settings = settings;
-          if (result['today_status']?['checked_in'] == true) {
+          if (result['today_status'] is Map && (result['today_status'] as Map)['checked_in'] == true) {
             _isCheckedIn = true;
           }
         });
