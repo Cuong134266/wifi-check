@@ -645,9 +645,34 @@ class _CheckinScreenState extends State<CheckinScreen>
         child: SafeArea(
           child: Column(
             children: [
-              _buildTopBar(),
+              // TopBar ẩn đi khi đang xem Stats (card trắng đã có nút Back riêng)
+              if (!_showHistory) _buildTopBar(),
               Expanded(
-                child: _showHistory ? _buildStatsView() : _buildHomeView(),
+                child: AnimatedSwitcher(
+                  duration: const Duration(milliseconds: 380),
+                  reverseDuration: const Duration(milliseconds: 280),
+                  switchInCurve: Curves.easeOutCubic,
+                  switchOutCurve: Curves.easeInCubic,
+                  transitionBuilder: (child, animation) {
+                    // Stats view: trượt lên từ dưới
+                    // Home view: fade + slide xuống nhẹ khi quay lại
+                    final isStats = child.key == const ValueKey('stats');
+                    final slideIn = Tween<Offset>(
+                      begin: isStats ? const Offset(0, 1) : const Offset(0, -0.05),
+                      end: Offset.zero,
+                    ).animate(animation);
+                    return SlideTransition(
+                      position: slideIn,
+                      child: FadeTransition(
+                        opacity: animation,
+                        child: child,
+                      ),
+                    );
+                  },
+                  child: _showHistory
+                      ? _buildStatsView(key: const ValueKey('stats'))
+                      : _buildHomeView(key: const ValueKey('home')),
+                ),
               ),
               if (!_showHistory) _buildFooter(),
             ],
@@ -761,7 +786,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     return '${_currentTime.hour.toString().padLeft(2, '0')}:${_currentTime.minute.toString().padLeft(2, '0')}';
   }
 
-  Widget _buildHomeView() {
+  Widget _buildHomeView({Key? key}) {
     final bool isEarly = _isEarly();
     final String statusText = _isCheckedIn
         ? "Đã điểm danh hôm nay"
@@ -776,6 +801,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         : (isEarly ? const Color(0xFF141517) : const Color(0xFFC62828));
 
     return Padding(
+      key: key,
       padding: const EdgeInsets.only(bottom: 84), // Dịch toàn bộ cụm lên trên thêm 24px nữa
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -994,8 +1020,9 @@ class _CheckinScreenState extends State<CheckinScreen>
   // ═══════════════════════════════════════════════
   // STATS (HISTORY + RANKING) VIEW
   // ═══════════════════════════════════════════════
-  Widget _buildStatsView() {
+  Widget _buildStatsView({Key? key}) {
     return Container(
+      key: key,
       decoration: const BoxDecoration(
         color: Color(0xFFF8F9FA),
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
