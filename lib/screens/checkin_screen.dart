@@ -541,8 +541,11 @@ class _CheckinScreenState extends State<CheckinScreen>
   Future<void> _loadHistoryBg() async {
     if (_user == null) return;
     try {
+      final now = DateTime.now();
       final res = await ApiService.request('history', {
         'email': _user!['email'],
+        'month': now.month.toString(),
+        'year': now.year.toString(),
       });
       if (res['success'] == true && mounted) {
         final records = res['records'] ?? [];
@@ -554,7 +557,11 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   Future<void> _loadRankingBg() async {
     try {
-      final res = await ApiService.request('ranking', {});
+      final now = DateTime.now();
+      final res = await ApiService.request('ranking', {
+        'month': now.month.toString(),
+        'year': now.year.toString(),
+      });
       if (res['success'] == true && mounted) {
         final rank = res['ranking'] ?? [];
         setState(() => _rankingList = rank);
