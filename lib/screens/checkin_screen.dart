@@ -393,15 +393,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         } catch (_) {} // Nếu lỗi mạng thì dùng settings cũ
       }
 
-      // Lấy GPS — BẮT BUỘC
-      final freshLocation = await LocationService.getInfo(_settings);
-      if (freshLocation['available'] == true) {
-        _locationInfo = freshLocation;
-        _isLocationValid = freshLocation['in_range'] == true;
-      } else {
-        _isLocationValid = false;
-      }
-
+      // GPS đã được lấy trước trong _performCheckinWithLocation, chỉ dùng kết quả từ state
       // Lấy Public IP tươi nhất
       final freshIp = await PublicIpService.getPublicIp(forceRefresh: true);
       _publicIp = freshIp;
@@ -470,16 +462,27 @@ class _CheckinScreenState extends State<CheckinScreen>
     }
   }
 
-  Future<bool> _performCheckinWithRefresh() async {
-    // Chỉ refresh mạng ngầm, KHÔNG gọi GPS ở đây!
-    // GPS được gọi đúng 1 lần duy nhất trong _performCheckin()
-    // để tránh double-call trên Safari iOS.
-    await _checkNetwork();
-    
+  Future<bool> _performCheckinWithLocation(
+    Future<Map<String, dynamic>> locationFuture,
+  ) async {
+    // Chạy song song: Network check và chờ GPS (GPS đã được khởi động từ gesture handler rồi)
+    final results = await Future.wait([
+      _checkNetwork().then((_) => null),
+      locationFuture,
+    ]);
+
     if (!mounted) return false;
 
-    if (_isCheckedIn) {
-      return true;
+    if (_isCheckedIn) return true;
+
+    // Áp dụng kết quả GPS vào state
+    final locInfo = results[1] as Map<String, dynamic>;
+    if (locInfo['available'] == true) {
+      _locationInfo = locInfo;
+      _isLocationValid = locInfo['in_range'] == true;
+    } else {
+      _locationInfo = locInfo;
+      _isLocationValid = false;
     }
 
     return _performCheckin();
@@ -505,7 +508,7 @@ class _CheckinScreenState extends State<CheckinScreen>
               child: Material(
                 color: Colors.transparent,
                 child: CheckinBottomSheet(
-                  checkinFuture: _performCheckinWithRefresh(),
+                  checkinFuture: _performCheckinWithLocation(LocationService.getInfo(_settings)),
                   locationInfo: _locationInfo,
                   // Đặt false để ép nó hiện Skeleton Loading ngay lập tức 
                   // và nó sẽ tự nhận true nếu Future _performCheckinWithRefresh() trả về true
