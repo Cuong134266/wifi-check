@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Đang chuyển hướng tải UXTeam App...</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+      background-color: #f3f4f6;
+      color: #374151;
+      text-align: center;
+    }
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid #e5e7eb;
+      border-top-color: #ea580c;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin-bottom: 20px;
+    }
+    @keyframes spin { 100% { transform: rotate(360deg); } }
+    h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 8px; }
+    p { color: #6b7280; font-size: 0.95rem; }
+    .fallback { display: none; margin-top: 30px; }
+    .btn {
+      display: inline-block;
+      padding: 12px 24px;
+      margin: 8px;
+      background: #111827;
+      color: white;
+      text-decoration: none;
+      border-radius: 8px;
+      font-weight: 500;
+    }
+  </style>
+</head>
+<body>
+  <div class="spinner"></div>
+  <h2>Đang đưa bạn đến chợ ứng dụng...</h2>
+  <p>Vui lòng chờ trong giây lát.</p>
+  <div class="fallback" id="fallbackMenu">
+    <p>Nếu hệ thống không tự chuyển hướng, vui lòng chọn bên dưới:</p>
+    <a href="#" id="btnIos" class="btn">Tải trên App Store</a>
+    <a href="#" id="btnAndroid" class="btn">Tải trên Google Play</a>
+  </div>
+  <script>
+    const IOS_STORE_LINK = "https://apps.apple.com/app/id123456789";
+    const ANDROID_STORE_LINK = "https://play.google.com/store/apps/details?id=com.company.wificheckin";
+    document.getElementById('btnIos').href = IOS_STORE_LINK;
+    document.getElementById('btnAndroid').href = ANDROID_STORE_LINK;
+    setTimeout(function() {
+      var ua = navigator.userAgent || navigator.vendor || window.opera;
+      if (/iPad|iPhone|iPod/.test(ua) && !window.MSStream) {
+        window.location.replace(IOS_STORE_LINK);
+      } else if (/android/i.test(ua)) {
+        window.location.replace(ANDROID_STORE_LINK);
+      } else {
+        document.querySelector('.spinner').style.display = 'none';
+        document.getElementById('fallbackMenu').style.display = 'block';
+        document.querySelector('h2').innerText = "Chọn nền tảng tải app";
+        document.querySelector('p').style.display = 'none';
+      }
+    }, 500);
+  </script>
+</body>
+</html>
