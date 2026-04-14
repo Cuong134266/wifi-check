@@ -988,126 +988,125 @@ class _CheckinScreenState extends State<CheckinScreen>
   // STATS (HISTORY + RANKING) VIEW
   // ═══════════════════════════════════════════════
   Widget _buildStatsView() {
-    return Column(
-      children: [
-        // Back Header & Tab Segments
-        Padding(
-          padding: const EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 8,
-            bottom: 8,
+    return Container(
+      decoration: const BoxDecoration(
+        color: Color(0xFFF8F9FA),
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: Column(
+        children: [
+          const SizedBox(height: 8),
+          Container(
+            width: 36, height: 4,
+            decoration: BoxDecoration(
+              color: const Color(0xFFE5E7EB),
+              borderRadius: BorderRadius.circular(2),
+            ),
           ),
-          child: Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.arrow_back, color: Colors.black87),
-                onPressed: () => setState(() => _showHistory = false),
-              ),
-              Expanded(
-                child: Container(
-                  margin: const EdgeInsets.only(
-                    right: 48,
-                  ), // balance back button
-                  height: 36,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withAlpha(150),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() => _statsSubTab = 0);
-                            if (_historyRecords.isEmpty) _loadHistory();
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: _statsSubTab == 0
-                                  ? Colors.white
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: _statsSubTab == 0
-                                  ? [
-                                      const BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 2,
-                                      ),
-                                    ]
-                                  : [],
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'Cá nhân',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+          const SizedBox(height: 4),
+          Padding(
+            padding: const EdgeInsets.only(left: 8, right: 16, top: 4, bottom: 8),
+            child: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF374151), size: 20),
+                  onPressed: () => setState(() => _showHistory = false),
+                ),
+                Expanded(
+                  child: Container(
+                    margin: const EdgeInsets.only(right: 40),
+                    height: 36,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFE5E7EB),
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() => _statsSubTab = 0);
+                              if (_historyRecords.isEmpty) _loadHistory();
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: _statsSubTab == 0 ? Colors.white : Colors.transparent,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: _statsSubTab == 0
+                                    ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))]
+                                    : [],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'Cá nhân',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: _statsSubTab == 0 ? const Color(0xFF111827) : const Color(0xFF6B7280),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                      Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            setState(() => _statsSubTab = 1);
-                            if (_rankingList.isEmpty) _loadRanking();
-                          },
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: _statsSubTab == 1
-                                  ? Colors.white
-                                  : Colors.transparent,
-                              borderRadius: BorderRadius.circular(20),
-                              boxShadow: _statsSubTab == 1
-                                  ? [
-                                      const BoxShadow(
-                                        color: Colors.black12,
-                                        blurRadius: 2,
-                                      ),
-                                    ]
-                                  : [],
-                            ),
-                            child: const Center(
-                              child: Text(
-                                'Xếp hạng',
-                                style: TextStyle(
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w600,
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() => _statsSubTab = 1);
+                              if (_rankingList.isEmpty) _loadRanking();
+                            },
+                            child: AnimatedContainer(
+                              duration: const Duration(milliseconds: 200),
+                              decoration: BoxDecoration(
+                                color: _statsSubTab == 1 ? Colors.white : Colors.transparent,
+                                borderRadius: BorderRadius.circular(20),
+                                boxShadow: _statsSubTab == 1
+                                    ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))]
+                                    : [],
+                              ),
+                              child: Center(
+                                child: Text(
+                                  'Xếp hạng',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: _statsSubTab == 1 ? const Color(0xFF111827) : const Color(0xFF6B7280),
+                                  ),
                                 ),
                               ),
                             ),
                           ),
                         ),
-                      ),
-                    ],
+                      ],
+                    ),
                   ),
                 ),
-              ),
-            ],
-          ),
-        ),
-
-        if (_user == null)
-          Expanded(
-            child: Center(
-              child: ElevatedButton(
-                onPressed: _ensureLoggedIn,
-                child: const Text('Đăng nhập để xem'),
-              ),
+              ],
             ),
-          )
-        else
-          Expanded(
-            child: _statsSubTab == 0
-                ? _buildHistoryList()
-                : _buildRankingList(),
           ),
-      ],
+
+          if (_user == null)
+            Expanded(
+              child: Center(
+                child: ElevatedButton(
+                  onPressed: _ensureLoggedIn,
+                  child: const Text('Đăng nhập để xem'),
+                ),
+              ),
+            )
+          else
+            Expanded(
+              child: _statsSubTab == 0
+                  ? _buildHistoryList()
+                  : _buildRankingList(),
+            ),
+        ],
+      ),
     );
   }
+
+
 
   Widget _buildHistoryList() {
     if (_historyRecords.isEmpty && _isLoadingHistory) {
@@ -1179,50 +1178,86 @@ class _CheckinScreenState extends State<CheckinScreen>
       return const Center(
         child: Text(
           'Bảng xếp hạng đang trống',
-          style: TextStyle(color: Colors.black54),
+          style: TextStyle(color: Color(0xFF9CA3AF)),
         ),
       );
     }
 
+    const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
+
     return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
       itemCount: _rankingList.length,
       itemBuilder: (context, index) {
         final r = _rankingList[index];
         final isCurrentUser = _user != null && r['email'] == _user!['email'];
+        final lateMinutes = (r['total_late_minutes'] ?? 0) as int;
+        final lateDays = (r['late_days'] ?? 0) as int;
+        final onTimeDays = (r['on_time_days'] ?? 0) as int;
+        final hasMedal = index < 3;
+        final isTop1 = index == 0;
+
         return Container(
-          margin: const EdgeInsets.only(bottom: 12),
+          margin: const EdgeInsets.only(bottom: 10),
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: isCurrentUser
-                ? Colors.blue.withAlpha(20)
-                : Colors.white.withAlpha(200),
+                ? const Color(0xFFFFF7ED)
+                : Colors.white,
             borderRadius: BorderRadius.circular(16),
-            border: isCurrentUser
-                ? Border.all(color: Colors.blueAccent.withAlpha(50))
-                : null,
+            border: Border.all(
+              color: isCurrentUser
+                  ? const Color(0xFFFBBF24)
+                  : isTop1
+                      ? const Color(0xFFFFE4E1)
+                      : const Color(0xFFF3F4F6),
+              width: isCurrentUser || isTop1 ? 1.5 : 1,
+            ),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 8,
+                offset: const Offset(0, 2),
+              ),
+            ],
           ),
           child: Row(
             children: [
+              // --- Rank / Medal ---
               SizedBox(
-                width: 24,
-                child: Text(
-                  '${index + 1}',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 16,
-                    color: Colors.black.withAlpha(100),
-                  ),
+                width: 32,
+                child: Center(
+                  child: hasMedal
+                      ? Text(medals[index], style: const TextStyle(fontSize: 20))
+                      : Text(
+                          '${index + 1}',
+                          style: TextStyle(
+                            fontWeight: FontWeight.w700,
+                            fontSize: 15,
+                            color: Colors.black.withOpacity(0.3),
+                          ),
+                        ),
                 ),
               ),
+              const SizedBox(width: 8),
+
+              // --- Avatar ---
               CircleAvatar(
-                radius: 14,
+                radius: 18,
                 backgroundImage: (r['avatar'] ?? '').isNotEmpty
                     ? NetworkImage(r['avatar'])
                     : null,
-                backgroundColor: Colors.black12,
+                backgroundColor: const Color(0xFFE5E7EB),
+                child: (r['avatar'] ?? '').isEmpty
+                    ? Text(
+                        (r['name'] ?? '?').substring(0, 1).toUpperCase(),
+                        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6B7280)),
+                      )
+                    : null,
               ),
               const SizedBox(width: 12),
+
+              // --- Name + stats ---
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -1230,34 +1265,58 @@ class _CheckinScreenState extends State<CheckinScreen>
                     Text(
                       r['name'] ?? '',
                       style: TextStyle(
-                        fontWeight: isCurrentUser
-                            ? FontWeight.bold
-                            : FontWeight.w600,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 14,
+                        color: isCurrentUser
+                            ? const Color(0xFFD97706)
+                            : const Color(0xFF111827),
                       ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
+                    const SizedBox(height: 2),
                     Text(
-                      '${r['on_time_days'] ?? 0} lượt đúng giờ',
-                      style: const TextStyle(fontSize: 11, color: Colors.green),
+                      '$onTimeDays đúng giờ  •  $lateDays muộn',
+                      style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
                     ),
                   ],
                 ),
               ),
-              if ((r['late_days'] ?? 0) > 0)
+
+              // --- Late minutes badge ---
+              if (lateMinutes > 0)
                 Container(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
-                    color: Colors.orange.withAlpha(20),
-                    borderRadius: BorderRadius.circular(12),
+                    color: isTop1
+                        ? const Color(0xFFFFE4E1)
+                        : const Color(0xFFFFF3F0),
+                    borderRadius: BorderRadius.circular(20),
                   ),
                   child: Text(
-                    'Trễ ${r['late_days']}',
-                    style: const TextStyle(
-                      fontSize: 10,
-                      color: Colors.orange,
-                      fontWeight: FontWeight.bold,
+                    '${lateMinutes}phút',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w700,
+                      color: isTop1
+                          ? const Color(0xFFEF4444)
+                          : const Color(0xFFF97316),
+                    ),
+                  ),
+                )
+              else
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFF0FDF4),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text(
+                    '✨ Chưa muộn',
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Color(0xFF22C55E),
                     ),
                   ),
                 ),
