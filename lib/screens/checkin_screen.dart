@@ -179,7 +179,8 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   Future<void> _checkLocation() async {
-    if (_isFetchingLocation) return;
+    // Trên Mobile: ngăn gọi đồng thời nhiều lần, nhưng vẫn cho qua trên Web
+    if (_isFetchingLocation && !kIsWeb) return;
     _isFetchingLocation = true;
     try {
       final locInfo = await LocationService.getInfo(_settings);
@@ -470,21 +471,17 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   Future<bool> _performCheckinWithRefresh() async {
-    // Refresh ngầm trong lúc hiển thị Skeleton Loading
-    // Chạy song song location và network để iOS Safari không bị chặn popup do mất scope tương tác
-    await Future.wait([
-      _checkLocation(),
-      _checkNetwork(),
-    ]);
+    // Chỉ refresh mạng ngầm, KHÔNG gọi GPS ở đây!
+    // GPS được gọi đúng 1 lần duy nhất trong _performCheckin()
+    // để tránh double-call trên Safari iOS.
+    await _checkNetwork();
     
     if (!mounted) return false;
 
     if (_isCheckedIn) {
-      // Đã checkin rồi, báo thành công ngay lập tức không gọi API
       return true;
     }
 
-    // Nếu chưa checkin, thực hiện call API _performCheckin chuẩn
     return _performCheckin();
   }
 
