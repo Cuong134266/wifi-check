@@ -10,10 +10,15 @@ class LocationService {
   /// Kiểm tra & xin quyền location
   static Future<bool> ensurePermission() async {
     try {
-      if (!kIsWeb) {
-        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-        if (!serviceEnabled) return false;
+      if (kIsWeb) {
+        // Trên nền tảng Web (đặc biệt Safari), việc gọi checkPermission hoặc requestPermission 
+        // sẽ làm đứt mạch User Gesture (do await Promise bất đồng bộ).
+        // Tốt nhất là return true để getCurrentPosition gọi thẳng native browser prompt!
+        return true;
       }
+
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) return false;
 
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {

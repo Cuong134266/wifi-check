@@ -92,7 +92,11 @@ class _CheckinScreenState extends State<CheckinScreen>
     _wifiTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (mounted && !_isCheckedIn) {
         _checkNetwork();
-        _checkLocation();
+        // KHÔNG auto-check location trên Web vì Safari sẽ âm thầm block
+        // khi nó bị gọi từ Timer thay vì thao tác tay của User.
+        if (!kIsWeb) {
+          _checkLocation();
+        }
       }
     });
 
@@ -134,7 +138,11 @@ class _CheckinScreenState extends State<CheckinScreen>
     _loadCache();
     await _restoreCachedUser(); // Khôi phục tài khoản đã lưu trước đó
     await _checkNetwork();
-    await _checkLocation();
+    
+    // Cố gắng check location lúc init, nhưng nếu trên web thì có thể fail (cần chờ user swipe)
+    if (!kIsWeb) {
+      await _checkLocation();
+    }
     
     // Nếu đã có user từ cache, tải dữ liệu ngầm
     if (_user != null) {
@@ -853,6 +861,10 @@ class _CheckinScreenState extends State<CheckinScreen>
             onVerticalDragCancel: () {
               if (_isCheckingIn || _isLoggingIn) return;
               _executeSpringBack();
+            },
+            onTap: () {
+              if (_isCheckingIn || _isLoggingIn) return;
+              _showCheckinResultSheet();
             },
             child: AnimatedBuilder(
               animation: Listenable.merge([
