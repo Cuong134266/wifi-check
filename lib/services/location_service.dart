@@ -1,4 +1,5 @@
 import 'package:geolocator/geolocator.dart';
+import 'package:flutter/foundation.dart';
 
 class LocationService {
   // ── Tọa độ văn phòng (cấu hình mặc định, có thể override từ settings) ──
@@ -8,17 +9,25 @@ class LocationService {
 
   /// Kiểm tra & xin quyền location
   static Future<bool> ensurePermission() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return false;
+    try {
+      if (!kIsWeb) {
+        bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+        if (!serviceEnabled) return false;
+      }
 
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
-      if (permission == LocationPermission.denied) return false;
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+        if (permission == LocationPermission.denied) return false;
+      }
+      if (permission == LocationPermission.deniedForever) return false;
+
+      return true;
+    } catch (e) {
+      // Bỏ qua lỗi permission API trên Safari web mượn tạm quyền luôn
+      if (kIsWeb) return true;
+      return false;
     }
-    if (permission == LocationPermission.deniedForever) return false;
-
-    return true;
   }
 
   /// Lấy vị trí hiện tại

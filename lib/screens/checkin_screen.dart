@@ -463,8 +463,11 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   Future<bool> _performCheckinWithRefresh() async {
     // Refresh ngầm trong lúc hiển thị Skeleton Loading
-    await _checkNetwork();
-    await _checkLocation();
+    // Chạy song song location và network để iOS Safari không bị chặn popup do mất scope tương tác
+    await Future.wait([
+      _checkLocation(),
+      _checkNetwork(),
+    ]);
     
     if (!mounted) return false;
 
