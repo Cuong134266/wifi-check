@@ -490,8 +490,18 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   void _showCheckinResultSheet() {
     if (!mounted) return;
-    // Bỏ vụ await _checkWifi/Location ở ngoài để Popup hiện NGAY LẬP TỨC!
-    
+
+    // ══════════════════════════════════════════════════
+    // SAFARI/CHROME GESTURE FIX:
+    // Khởi động GPS NGAY TẠI ĐÂY trước bất kỳ thứ gì khác.
+    // showGeneralDialog() có thể phá vỡ User Gesture context
+    // vì nó schedule frame qua WidgetsBinding.
+    // Nếu getInfo() được gọi bên TRONG pageBuilder thì Safari
+    // và Chrome đã mất "User Gesture Token" → không bao giờ hiện popup!
+    // ══════════════════════════════════════════════════
+    final Future<Map<String, dynamic>> locationFuture =
+        LocationService.getInfo(_settings);
+
     showGeneralDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
@@ -508,11 +518,9 @@ class _CheckinScreenState extends State<CheckinScreen>
               child: Material(
                 color: Colors.transparent,
                 child: CheckinBottomSheet(
-                  checkinFuture: _performCheckinWithLocation(LocationService.getInfo(_settings)),
+                  checkinFuture: _performCheckinWithLocation(locationFuture),
                   locationInfo: _locationInfo,
-                  // Đặt false để ép nó hiện Skeleton Loading ngay lập tức 
-                  // và nó sẽ tự nhận true nếu Future _performCheckinWithRefresh() trả về true
-                  isAlreadyCheckedIn: false, 
+                  isAlreadyCheckedIn: false,
                   checkinTime: _wifiSubText,
                 ),
               ),
@@ -528,6 +536,7 @@ class _CheckinScreenState extends State<CheckinScreen>
           ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
           child: FadeTransition(
             opacity: anim1,
+
             child: child,
           ),
         );

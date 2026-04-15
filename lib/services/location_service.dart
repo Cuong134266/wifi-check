@@ -81,17 +81,10 @@ class LocationService {
           defaultRadiusMeters;
 
       if (debugFakeLocation) {
-        await Future.delayed(
-          const Duration(milliseconds: 500),
-        ); // Giả lập delay
+        await Future.delayed(const Duration(milliseconds: 500));
         final currentLat = officeLat + debugLatOffset;
         final currentLng = officeLng + debugLngOffset;
-        final distance = distanceTo(
-          currentLat,
-          currentLng,
-          officeLat,
-          officeLng,
-        );
+        final distance = distanceTo(currentLat, currentLng, officeLat, officeLng);
         return {
           'available': true,
           'latitude': currentLat,
@@ -104,6 +97,36 @@ class LocationService {
         };
       }
 
+      // ═══════════════════════════════════════════════════════════
+      // WEB SAFARI/CHROME GESTURE FIX:
+      // Trên Web, getCurrentPosition() PHẢI là lệnh await ĐẦU TIÊN
+      // trong hàm async này. Bất kỳ await nào trước nó (kể cả
+      // ensurePermission() hay Future.delayed()) sẽ làm trình duyệt
+      // mất "User Gesture Token" → không bao giờ hiện popup xin quyền!
+      // ═══════════════════════════════════════════════════════════
+      if (kIsWeb) {
+        final Position? position = await Geolocator.getCurrentPosition(
+          locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.best,
+            timeLimit: Duration(seconds: 15),
+          ),
+        );
+        if (position == null) {
+          return {'available': false, 'error': 'Không thể lấy vị trí hiện tại.'};
+        }
+        final distance = distanceTo(position.latitude, position.longitude, officeLat, officeLng);
+        return {
+          'available': true,
+          'latitude': position.latitude,
+          'longitude': position.longitude,
+          'accuracy': position.accuracy,
+          'distance': distance,
+          'radius': radius,
+          'in_range': distance <= radius,
+        };
+      }
+
+      // --- Native (Android / iOS app) flow ---
       final hasPermission = await ensurePermission();
       if (!hasPermission) {
         return {
@@ -116,8 +139,6 @@ class LocationService {
       if (position == null) {
         return {'available': false, 'error': 'Không thể lấy vị trí hiện tại.'};
       }
-
-      // Tọa độ văn phòng đã đọc ở trên
 
       final distance = distanceTo(
         position.latitude,
