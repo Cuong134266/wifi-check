@@ -377,7 +377,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     try {
       if (!await _ensureLoggedIn()) return false;
 
-      // Re-sync settings để có cấu hình mới nhất
+      // Re-sync settings từ server để đảm bảo có office_public_ip mới nhất
       if (_user != null) {
         try {
           final freshResult = await ApiService.loginAndSync(
@@ -388,33 +388,35 @@ class _CheckinScreenState extends State<CheckinScreen>
             _settings = freshSettings;
             _saveUser(_user!, freshSettings);
           }
-        } catch (_) {}
+        } catch (_) {} // Nếu lỗi mạng thì dùng settings cũ
       }
 
-      // GATE 1: Verify mạng (WiFi/IP)
-      // Native: check SSID + BSSID + local IP
-      // Web: check local IP từ WebRTC (nếu trình duyệt cho phép), nếu không thì bỏ qua
-      final wifiVerify = WifiService.verify(_wifiInfo, _settings);
-      if (wifiVerify['verified'] != true) {
-        final reasons = (wifiVerify['reasons'] as List).join(', ');
-        _showErrorPopup('Không thể điểm danh:\n$reasons');
+      // GPS đã được lấy trước trong _performCheckinWithLocation, chỉ dùng kết quả từ state
+      // Lấy Public IP tươi nhất
+      final freshIp = await PublicIpService.getPublicIp(forceRefresh: true);
+      _publicIp = freshIp;
+
+      // GATE 1: Kiểm tra Public IP khớp với công ty
+      final ipResult = await PublicIpService.verify(_settings);
+      if (ipResult['verified'] != true && ipResult['skipped'] != true) {
+        _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
         return false;
       }
 
-      // GATE 2: GPS trong bán kính công ty
+      // GATE 2: Kiểm tra GPS trong bán kính công ty
       if (!_isLocationValid) {
-        _showErrorPopup('Bạn phải ở trong phạm vi công ty và cấp quyền Vị trí để điểm danh.');
+        _showErrorPopup('Bạn phải ở trong phạm vi công ty (bán kính 2km) và cấp quyền Vị trí để điểm danh.');
         return false;
       }
 
+      // Đảm bảo device info đã sẵn sàng
       if (_deviceInfo.isEmpty) {
         _deviceInfo = await DeviceService.getInfo();
       }
 
       // Xác định phương thức checkin
-      String checkinMethod = 'gps';
-      final localIp = _wifiInfo['ip']?.toString() ?? '';
-      if (localIp.isNotEmpty) checkinMethod += '+webrtc_ip';
+      String checkinMethod = 'public_ip';
+      if (_isLocationValid) checkinMethod += '+gps';
       if (!kIsWeb && _wifiInfo['ssid'] != null && _wifiInfo['ssid'] != 'Web Browser') {
         checkinMethod += '+wifi';
       }
@@ -423,8 +425,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         'latitude': _locationInfo['latitude']?.toString() ?? '',
         'longitude': _locationInfo['longitude']?.toString() ?? '',
         'distance': _locationInfo['distance']?.toString() ?? '',
-        'ip_address': localIp,           // WebRTC local IP (192.168.x.x) hoặc native IP
-        'public_ip': '',                 // Không dùng public IP nữa
+        'public_ip': _publicIp,
         'checkin_method': checkinMethod,
       });
 

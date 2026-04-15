@@ -8,31 +8,13 @@ class WifiService {
 
   static Map<String, dynamic> verify(Map<String, dynamic> wifiInfo, Map<String, dynamic> settings) {
     if (kIsWeb) {
-      // Web không thể đọc SSID/BSSID → bỏ qua 2 check đó.
-      // Nhưng NẾU WebRTC lấy được local IP thì vẫn check office_ip_prefix.
-      final String webIp = wifiInfo['ip']?.toString() ?? '';
-      final String officeIpPrefix = settings['office_ip_prefix'] ?? '';
-
-      if (webIp.isNotEmpty && officeIpPrefix.isNotEmpty) {
-        final validPrefixes = officeIpPrefix
-            .split(',')
-            .map((e) => e.trim())
-            .where((e) => e.isNotEmpty)
-            .toList();
-        final isIpOk = validPrefixes.any((prefix) => webIp.startsWith(prefix));
-        return {
-          'verified': isIpOk,
-          'reasons': isIpOk
-              ? []
-              : ['IP mạng nội bộ không khớp ($webIp) — Bạn có đang dùng WiFi văn phòng không?'],
-        };
-      }
-
-      // WebRTC không lấy được IP (trình duyệt chặn) → bỏ qua, dựa vào GPS
-      return {'verified': true, 'reasons': []};
+      // Web không thể đọc WiFi hardware → bỏ qua verify, chấp nhận GPS-only
+      return {
+        'verified': true,
+        'reasons': [],
+      };
     }
 
-    // ── Native (Android / iOS) ──
     bool verified = true;
     List<String> reasons = [];
 
@@ -66,6 +48,9 @@ class WifiService {
       }
     }
 
-    return {'verified': verified, 'reasons': reasons};
+    return {
+      'verified': verified,
+      'reasons': reasons,
+    };
   }
 }
