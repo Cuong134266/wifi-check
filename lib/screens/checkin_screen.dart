@@ -1484,15 +1484,12 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
     _headerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
 
     // Phase sequence: card opens (handled by showGeneralDialog 400ms)
-    // → gradient fades in → header slides down → list items cascade
-    Future.delayed(const Duration(milliseconds: 200), () {
+    // → gradient fades in → header slides down + list cascades
+    Future.delayed(const Duration(milliseconds: 150), () {
       if (mounted) _gradientCtrl.forward();
     });
-    Future.delayed(const Duration(milliseconds: 350), () {
+    Future.delayed(const Duration(milliseconds: 300), () {
       if (mounted) _headerCtrl.forward();
-    });
-    Future.delayed(const Duration(milliseconds: 500), () {
-      if (mounted) setState(() => _listReady = true);
     });
 
     if (widget.historyRecords.isEmpty) widget.onLoadHistory();
@@ -1571,8 +1568,8 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
                           onTap: widget.onClose,
                           child: Container(
                             width: 36, height: 36,
-                            decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF000000)),
-                            child: const Icon(Icons.close_rounded, size: 18, color: Colors.white),
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withOpacity(0.06)),
+                            child: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF374151)),
                           ),
                         ),
                       ],
@@ -1584,16 +1581,14 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
                 Expanded(
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: _listReady
-                        ? AnimatedSwitcher(
-                            duration: const Duration(milliseconds: 400),
-                            switchInCurve: Curves.easeOutCubic,
-                            transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
-                            child: _tab == 0
-                                ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryContent())
-                                : KeyedSubtree(key: const ValueKey(1), child: _buildRankingContent()),
-                          )
-                        : const SizedBox.shrink(),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 300),
+                      switchInCurve: Curves.easeOutCubic,
+                      transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+                      child: _tab == 0
+                          ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryContent())
+                          : KeyedSubtree(key: const ValueKey(1), child: _buildRankingContent()),
+                    ),
                   ),
                 ),
                 // ── OK Button (matching app black rounded style) ──
@@ -1653,8 +1648,8 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
           final r = widget.historyRecords[i];
           final isLate = r['status'] == 'late';
           final lateMin = ((r['late_minutes'] ?? 0) as num).toInt();
-          // Each item gets its own delayed start — true sequential reveal
-          final delayMs = 80 * i;
+          // Each item gets its own delayed start for sequential reveal
+          final delayMs = 300 + 60 * i;
           return _SequentialRevealItem(
             delayMs: delayMs,
             child: _HistoryCardAnimated(record: r, isLate: isLate, lateMin: lateMin, isFirst: i == 0,
@@ -1680,7 +1675,7 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
           final lateMinutes = ((r['total_late_minutes'] ?? 0) as num).toInt();
           final lateDays = ((r['late_days'] ?? 0) as num).toInt();
           final onTimeDays = ((r['on_time_days'] ?? 0) as num).toInt();
-          final delayMs = 90 * i;
+          final delayMs = 300 + 70 * i;
           return _SequentialRevealItem(
             delayMs: delayMs,
             child: _RankingCardAnimated(record: r, index: i, isCurrentUser: isCurrentUser, isTop1: i == 0,
@@ -1709,14 +1704,13 @@ class _SequentialRevealItem extends StatefulWidget {
 
 class _SequentialRevealItemState extends State<_SequentialRevealItem> with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
-  bool _started = false;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 450));
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
     Future.delayed(Duration(milliseconds: widget.delayMs), () {
-      if (mounted) { _started = true; _ctrl.forward(); }
+      if (mounted) _ctrl.forward();
     });
   }
 
@@ -1725,13 +1719,12 @@ class _SequentialRevealItemState extends State<_SequentialRevealItem> with Singl
 
   @override
   Widget build(BuildContext context) {
-    if (!_started) return const SizedBox.shrink();
     return AnimatedBuilder(
       animation: _ctrl,
       builder: (context, child) {
         final t = const Cubic(0.22, 1, 0.36, 1).transform(_ctrl.value);
         return Transform.translate(
-          offset: Offset(0, 24 * (1 - t)),
+          offset: Offset(0, 32 * (1 - t)),
           child: Opacity(opacity: t, child: child),
         );
       },
