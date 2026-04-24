@@ -1473,22 +1473,35 @@ class _StatsPopup extends StatefulWidget {
 
 class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin {
   int _tab = 0;
-  late AnimationController _headerCtrl;
+  late AnimationController _gradientCtrl;  // white → gradient
+  late AnimationController _headerCtrl;    // header slide-down
+  bool _listReady = false;                 // triggers list stagger
 
   @override
   void initState() {
     super.initState();
+    _gradientCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
     _headerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+
+    // Phase sequence: card opens (handled by showGeneralDialog 400ms)
+    // → gradient fades in → header slides down → list items cascade
     Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) _gradientCtrl.forward();
+    });
+    Future.delayed(const Duration(milliseconds: 350), () {
       if (mounted) _headerCtrl.forward();
     });
-    // Auto-load data
+    Future.delayed(const Duration(milliseconds: 500), () {
+      if (mounted) setState(() => _listReady = true);
+    });
+
     if (widget.historyRecords.isEmpty) widget.onLoadHistory();
     if (widget.rankingList.isEmpty) widget.onLoadRanking();
   }
 
   @override
   void dispose() {
+    _gradientCtrl.dispose();
     _headerCtrl.dispose();
     super.dispose();
   }
@@ -1497,21 +1510,31 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
   Widget build(BuildContext context) {
     return SafeArea(
       child: Center(
-        child: Container(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              begin: Alignment.topCenter, end: Alignment.bottomCenter,
-              colors: [Color(0xFFF0FDF4), Color(0xFFFFF7ED)],
-            ),
-            borderRadius: BorderRadius.circular(24),
-            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))],
-          ),
+        child: AnimatedBuilder(
+          animation: _gradientCtrl,
+          builder: (context, child) {
+            final gt = Curves.easeInOut.transform(_gradientCtrl.value);
+            return Container(
+              margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  colors: [
+                    Color.lerp(Colors.white, const Color(0xFFF0FDF4), gt)!,
+                    Color.lerp(Colors.white, const Color(0xFFFFF7ED), gt)!,
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12 + 0.06 * gt), blurRadius: 30, offset: const Offset(0, 10))],
+              ),
+              child: child,
+            );
+          },
           child: Material(
             color: Colors.transparent,
             child: Column(
               children: [
-                // ── Header: X button + Tabs ──
+                // ── Header: Tabs + X button ──
                 AnimatedBuilder(
                   animation: _headerCtrl,
                   builder: (context, child) {
@@ -1522,10 +1545,9 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
                     );
                   },
                   child: Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+                    padding: const EdgeInsets.fromLTRB(16, 14, 8, 0),
                     child: Row(
                       children: [
-                        // Tab switcher
                         Expanded(
                           child: Container(
                             height: 36,
@@ -1539,21 +1561,18 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
                                   child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
                                     boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))])),
                                 ),
-                                Row(children: [
-                                  _tabBtn('Cá nhân', 0), _tabBtn('Xếp hạng', 1),
-                                ]),
+                                Row(children: [_tabBtn('Cá nhân', 0), _tabBtn('Xếp hạng', 1)]),
                               ]);
                             }),
                           ),
                         ),
                         const SizedBox(width: 8),
-                        // X close button
                         GestureDetector(
                           onTap: widget.onClose,
                           child: Container(
                             width: 36, height: 36,
-                            decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withOpacity(0.06)),
-                            child: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF374151)),
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: const Color(0xFF000000)),
+                            child: const Icon(Icons.close_rounded, size: 18, color: Colors.white),
                           ),
                         ),
                       ],
@@ -1565,31 +1584,32 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
                 Expanded(
                   child: ClipRRect(
                     borderRadius: BorderRadius.circular(16),
-                    child: AnimatedSwitcher(
-                      duration: const Duration(milliseconds: 400),
-                      switchInCurve: Curves.easeOutCubic,
-                      transitionBuilder: (child, anim) => FadeTransition(opacity: anim,
-                        child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero).animate(anim), child: child)),
-                      child: _tab == 0
-                          ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryContent())
-                          : KeyedSubtree(key: const ValueKey(1), child: _buildRankingContent()),
-                    ),
+                    child: _listReady
+                        ? AnimatedSwitcher(
+                            duration: const Duration(milliseconds: 400),
+                            switchInCurve: Curves.easeOutCubic,
+                            transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+                            child: _tab == 0
+                                ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryContent())
+                                : KeyedSubtree(key: const ValueKey(1), child: _buildRankingContent()),
+                          )
+                        : const SizedBox.shrink(),
                   ),
                 ),
-                // ── OK Button ──
+                // ── OK Button (matching app black rounded style) ──
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   child: SizedBox(
-                    width: double.infinity, height: 48,
+                    width: double.infinity, height: 50,
                     child: ElevatedButton(
                       onPressed: widget.onClose,
                       style: ElevatedButton.styleFrom(
-                        backgroundColor: const Color(0xFF111827),
+                        backgroundColor: const Color(0xFF000000),
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
                         elevation: 0,
                       ),
-                      child: const Text('OK', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                      child: const Text('OK', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'Inter', letterSpacing: 0.5)),
                     ),
                   ),
                 ),
@@ -1620,7 +1640,7 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
 
   Widget _buildHistoryContent() {
     if (widget.historyRecords.isEmpty && widget.isLoadingHistory) return const SkeletonList(count: 5, isRanking: false);
-    if (widget.historyRecords.isEmpty) return Center(child: TextButton.icon(onPressed: widget.onLoadHistory, icon: const Icon(Icons.refresh, size: 18), label: const Text('Tải lại')));
+    if (widget.historyRecords.isEmpty) return _emptyState(widget.onLoadHistory);
     int maxLate = 0;
     for (final r in widget.historyRecords) { final lm = ((r['late_minutes'] ?? 0) as num).toInt(); if (lm > maxLate) maxLate = lm; }
     return RefreshIndicator(
@@ -1633,13 +1653,12 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
           final r = widget.historyRecords[i];
           final isLate = r['status'] == 'late';
           final lateMin = ((r['late_minutes'] ?? 0) as num).toInt();
-          final delay = (i == 0 ? 150 : (150 + 80 * math.min(i, 3) + 50 * math.max(0, i - 3))).toInt();
-          return TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0), duration: const Duration(milliseconds: 500), curve: const Cubic(0.22, 1, 0.36, 1),
-            builder: (ctx, val, child) => Transform.translate(offset: Offset(0, 28 * (1 - val)),
-              child: Transform.scale(scale: 0.98 + 0.02 * val, child: Opacity(opacity: val, child: child))),
+          // Each item gets its own delayed start — true sequential reveal
+          final delayMs = 80 * i;
+          return _SequentialRevealItem(
+            delayMs: delayMs,
             child: _HistoryCardAnimated(record: r, isLate: isLate, lateMin: lateMin, isFirst: i == 0,
-              isMaxLate: isLate && lateMin == maxLate && maxLate > 0, animDelay: Duration(milliseconds: delay)),
+              isMaxLate: isLate && lateMin == maxLate && maxLate > 0, animDelay: Duration(milliseconds: delayMs)),
           );
         },
       ),
@@ -1648,7 +1667,7 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
 
   Widget _buildRankingContent() {
     if (widget.rankingList.isEmpty && widget.isLoadingRanking) return const SkeletonList(count: 5, isRanking: true);
-    if (widget.rankingList.isEmpty) return Center(child: TextButton.icon(onPressed: widget.onLoadRanking, icon: const Icon(Icons.refresh, size: 18), label: const Text('Tải lại')));
+    if (widget.rankingList.isEmpty) return _emptyState(widget.onLoadRanking);
     return RefreshIndicator(
       onRefresh: widget.onLoadRankingBg, color: const Color(0xFFF97316),
       child: ListView.builder(
@@ -1661,17 +1680,64 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
           final lateMinutes = ((r['total_late_minutes'] ?? 0) as num).toInt();
           final lateDays = ((r['late_days'] ?? 0) as num).toInt();
           final onTimeDays = ((r['on_time_days'] ?? 0) as num).toInt();
-          final delay = (i == 0 ? 150 : (150 + 100 * math.min(i, 4) + 60 * math.max(0, i - 4))).toInt();
-          return TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0), duration: const Duration(milliseconds: 550), curve: const Cubic(0.22, 1, 0.36, 1),
-            builder: (ctx, val, child) => Transform.translate(offset: Offset(0, 32 * (1 - val)),
-              child: Transform.scale(scale: 0.98 + 0.02 * val, child: Opacity(opacity: val, child: child))),
+          final delayMs = 90 * i;
+          return _SequentialRevealItem(
+            delayMs: delayMs,
             child: _RankingCardAnimated(record: r, index: i, isCurrentUser: isCurrentUser, isTop1: i == 0,
-              lateMinutes: lateMinutes, lateDays: lateDays, onTimeDays: onTimeDays, animDelay: Duration(milliseconds: delay)),
+              lateMinutes: lateMinutes, lateDays: lateDays, onTimeDays: onTimeDays, animDelay: Duration(milliseconds: delayMs)),
           );
         },
       ),
     );
   }
+
+  Widget _emptyState(VoidCallback onRetry) {
+    return Center(child: TextButton.icon(
+      onPressed: onRetry, icon: const Icon(Icons.refresh, size: 18), label: const Text('Tải lại'),
+    ));
+  }
 }
+
+// ── Sequential Reveal Item: each card waits its turn then slides up + fades in ──
+class _SequentialRevealItem extends StatefulWidget {
+  final int delayMs;
+  final Widget child;
+  const _SequentialRevealItem({required this.delayMs, required this.child});
+  @override
+  State<_SequentialRevealItem> createState() => _SequentialRevealItemState();
+}
+
+class _SequentialRevealItemState extends State<_SequentialRevealItem> with SingleTickerProviderStateMixin {
+  late AnimationController _ctrl;
+  bool _started = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 450));
+    Future.delayed(Duration(milliseconds: widget.delayMs), () {
+      if (mounted) { _started = true; _ctrl.forward(); }
+    });
+  }
+
+  @override
+  void dispose() { _ctrl.dispose(); super.dispose(); }
+
+  @override
+  Widget build(BuildContext context) {
+    if (!_started) return const SizedBox.shrink();
+    return AnimatedBuilder(
+      animation: _ctrl,
+      builder: (context, child) {
+        final t = const Cubic(0.22, 1, 0.36, 1).transform(_ctrl.value);
+        return Transform.translate(
+          offset: Offset(0, 24 * (1 - t)),
+          child: Opacity(opacity: t, child: child),
+        );
+      },
+      child: widget.child,
+    );
+  }
+}
+
 
