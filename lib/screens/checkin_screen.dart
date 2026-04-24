@@ -674,24 +674,53 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   // ═══════════════════════════════════════════════
-  // CONTAINER TRANSFORM: Open / Close Stats
+  // POPUP DIALOG: Open / Close Stats
   // ═══════════════════════════════════════════════
   void _openStats() {
     if (_user == null) return;
-    setState(() => _showHistory = true);
-    _expandCtrl.forward();
-    Future.delayed(const Duration(milliseconds: 300), () {
-      if (mounted) _headerSlideCtrl.forward();
+    _showHistory = true;
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Stats',
+      barrierColor: Colors.black.withOpacity(0.5),
+      transitionDuration: const Duration(milliseconds: 400),
+      transitionBuilder: (ctx, anim, anim2, child) {
+        final curve = Curves.easeOutCubic.transform(anim.value);
+        return Transform.scale(
+          scale: 0.85 + (0.15 * curve),
+          alignment: Alignment.topCenter,
+          child: Opacity(opacity: curve, child: child),
+        );
+      },
+      pageBuilder: (ctx, anim, anim2) {
+        return _StatsPopup(
+          user: _user,
+          historyRecords: _historyRecords,
+          rankingList: _rankingList,
+          isLoadingHistory: _isLoadingHistory,
+          isLoadingRanking: _isLoadingRanking,
+          onClose: () => Navigator.of(ctx).pop(),
+          onLoadHistory: _loadHistory,
+          onLoadHistoryBg: _loadHistoryBg,
+          onLoadRanking: _loadRanking,
+          onLoadRankingBg: _loadRankingBg,
+          onEnsureLoggedIn: _ensureLoggedIn,
+          onRefreshData: () {
+            // After refresh, update the popup
+            setState(() {});
+          },
+        );
+      },
+    ).then((_) {
+      _showHistory = false;
     });
   }
 
   void _closeStats() {
-    _headerSlideCtrl.reverse();
-    Future.delayed(const Duration(milliseconds: 200), () {
-      _expandCtrl.reverse().then((_) {
-        if (mounted) setState(() => _showHistory = false);
-      });
-    });
+    if (Navigator.of(context).canPop()) {
+      Navigator.of(context).pop();
+    }
   }
 
   @override
@@ -699,34 +728,11 @@ class _CheckinScreenState extends State<CheckinScreen>
     return Scaffold(
       body: EtherBackground(
         child: SafeArea(
-          child: Stack(
+          child: Column(
             children: [
-              // ── Home layer (always present) ──
-              Column(
-                children: [
-                  _buildTopBar(),
-                  Expanded(child: _buildHomeView(key: const ValueKey('home'))),
-                  _buildFooter(),
-                ],
-              ),
-              // ── Stats overlay with Container Transform ──
-              if (_showHistory || _expandCtrl.isAnimating)
-                AnimatedBuilder(
-                  animation: _expandCtrl,
-                  builder: (context, _) {
-                    final t = Curves.easeOutCubic.transform(_expandCtrl.value);
-                    return Positioned.fill(
-                      child: Transform.scale(
-                        scale: 0.85 + (0.15 * t),
-                        alignment: Alignment.topCenter,
-                        child: Opacity(
-                          opacity: t,
-                          child: _buildStatsView(key: const ValueKey('stats')),
-                        ),
-                      ),
-                    );
-                  },
-                ),
+              _buildTopBar(),
+              Expanded(child: _buildHomeView(key: const ValueKey('home'))),
+              _buildFooter(),
             ],
           ),
         ),
@@ -1068,254 +1074,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     );
     _springController.forward(from: 0.0);
   }
-
-  // ═══════════════════════════════════════════════
-  // STATS (HISTORY + RANKING) VIEW
-  // ═══════════════════════════════════════════════
-  Widget _buildStatsView({Key? key}) {
-    return AnimatedBuilder(
-      animation: _expandCtrl,
-      builder: (context, _) {
-        final gt = ((_expandCtrl.value - 0.3) / 0.7).clamp(0.0, 1.0);
-        return Container(
-          key: key,
-          decoration: BoxDecoration(
-            gradient: LinearGradient(
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
-              colors: [
-                Color.lerp(const Color(0xFFF8F9FA), const Color(0xFFF0FDF4), gt)!,
-                Color.lerp(const Color(0xFFF8F9FA), const Color(0xFFFFF7ED), gt)!,
-              ],
-            ),
-            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 8),
-              Container(width: 36, height: 4, decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(2))),
-              const SizedBox(height: 4),
-              AnimatedBuilder(
-                animation: _headerSlideCtrl,
-                builder: (context, child) {
-                  final ht = Curves.easeOutCubic.transform(_headerSlideCtrl.value);
-                  return Transform.translate(offset: Offset(0, -20 * (1 - ht)), child: Opacity(opacity: ht, child: child));
-                },
-                child: _buildStatsHeader(),
-              ),
-              if (_user == null)
-                Expanded(child: Center(child: ElevatedButton(onPressed: _ensureLoggedIn, child: const Text('Đăng nhập để xem'))))
-              else
-                Expanded(
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 450),
-                    switchInCurve: Curves.easeOutCubic,
-                    switchOutCurve: Curves.easeInCubic,
-                    transitionBuilder: (child, anim) => FadeTransition(opacity: anim,
-                      child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero).animate(anim), child: child)),
-                    child: _statsSubTab == 0
-                        ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryList())
-                        : KeyedSubtree(key: const ValueKey(1), child: _buildRankingList()),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  Widget _buildStatsHeader() {
-    return Padding(
-      padding: const EdgeInsets.only(left: 8, right: 16, top: 4, bottom: 8),
-      child: Row(
-        children: [
-          IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF374151), size: 20), onPressed: _closeStats),
-          Expanded(
-            child: Container(
-              margin: const EdgeInsets.only(right: 40),
-              height: 36,
-              decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(20)),
-              child: LayoutBuilder(builder: (context, constraints) {
-                final halfW = constraints.maxWidth / 2;
-                return Stack(children: [
-                  AnimatedPositioned(
-                    duration: const Duration(milliseconds: 350), curve: Curves.easeInOutCubic,
-                    left: _statsSubTab == 0 ? 0 : halfW, top: 0, bottom: 0, width: halfW,
-                    child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
-                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))])),
-                  ),
-                  Row(children: [
-                    Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque,
-                      onTap: () { setState(() => _statsSubTab = 0); _historyRecords.isEmpty ? _loadHistory() : _loadHistoryBg(); },
-                      child: Center(child: AnimatedDefaultTextStyle(duration: const Duration(milliseconds: 200),
-                        style: TextStyle(fontSize: 13, fontWeight: _statsSubTab == 0 ? FontWeight.w600 : FontWeight.w400,
-                          color: _statsSubTab == 0 ? const Color(0xFF111827) : const Color(0xFF6B7280).withOpacity(0.7)),
-                        child: const Text('Cá nhân'))))),
-                    Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque,
-                      onTap: () { setState(() => _statsSubTab = 1); _rankingList.isEmpty ? _loadRanking() : _loadRankingBg(); },
-                      child: Center(child: AnimatedDefaultTextStyle(duration: const Duration(milliseconds: 200),
-                        style: TextStyle(fontSize: 13, fontWeight: _statsSubTab == 1 ? FontWeight.w600 : FontWeight.w400,
-                          color: _statsSubTab == 1 ? const Color(0xFF111827) : const Color(0xFF6B7280).withOpacity(0.7)),
-                        child: const Text('Xếp hạng'))))),
-                  ]),
-                ]);
-              }),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-
-
-  Widget _buildHistoryList() {
-    // Skeleton loading
-    if (_historyRecords.isEmpty && _isLoadingHistory) {
-      return const SkeletonList(count: 6, isRanking: false);
-    }
-    if (_historyRecords.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Lịch sử hiện đang trống', style: TextStyle(color: Colors.black54)),
-            const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: _loadHistory,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Tải lại'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    // Find max late minutes for pulse effect
-    int maxLate = 0;
-    for (final r in _historyRecords) {
-      final lm = ((r['late_minutes'] ?? 0) as num).toInt();
-      if (lm > maxLate) maxLate = lm;
-    }
-
-    return RefreshIndicator(
-      onRefresh: () async { await _loadHistoryBg(); },
-      color: const Color(0xFFF97316),
-      child: ListView.builder(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-        itemCount: _historyRecords.length,
-        itemBuilder: (context, index) {
-          final r = _historyRecords[index];
-          final isLate = r['status'] == 'late';
-          final lateMin = ((r['late_minutes'] ?? 0) as num).toInt();
-          final isFirst = index == 0;
-          final isMaxLate = isLate && lateMin == maxLate && maxLate > 0;
-
-          // Stagger: item1=150ms, item2=230ms, item3=310ms...
-          final delay = (index == 0 ? 150 : (150 + 80 * math.min(index, 3) + 50 * math.max(0, index - 3))).toInt();
-
-          return TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0),
-            duration: const Duration(milliseconds: 500),
-            curve: const Cubic(0.22, 1, 0.36, 1), // easeOutExpo
-            builder: (context, val, child) {
-              return Transform.translate(
-                offset: Offset(0, 28 * (1 - val)),
-                child: Transform.scale(
-                  scale: 0.98 + 0.02 * val,
-                  child: Opacity(opacity: val, child: child),
-                ),
-              );
-            },
-            child: _HistoryCardAnimated(
-              record: r,
-              isLate: isLate,
-              lateMin: lateMin,
-              isFirst: isFirst,
-              isMaxLate: isMaxLate,
-              animDelay: Duration(milliseconds: delay),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
-  Widget _buildRankingList() {
-    // Skeleton loading
-    if (_rankingList.isEmpty && _isLoadingRanking) {
-      return const SkeletonList(count: 6, isRanking: true);
-    }
-    if (_rankingList.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Bảng xếp hạng đang trống', style: TextStyle(color: Color(0xFF9CA3AF))),
-            const SizedBox(height: 12),
-            TextButton.icon(
-              onPressed: _loadRanking,
-              icon: const Icon(Icons.refresh, size: 18),
-              label: const Text('Tải lại'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    return RefreshIndicator(
-      onRefresh: () async { await _loadRankingBg(); },
-      color: const Color(0xFFF97316),
-      child: ListView.builder(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
-        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-        itemCount: _rankingList.length,
-        itemBuilder: (context, index) {
-          final r = _rankingList[index];
-          final isCurrentUser = _user != null && r['email'] == _user!['email'];
-          final lateMinutes = ((r['total_late_minutes'] ?? 0) as num).toInt();
-          final lateDays = ((r['late_days'] ?? 0) as num).toInt();
-          final onTimeDays = ((r['on_time_days'] ?? 0) as num).toInt();
-          final isTop1 = index == 0;
-
-          // Stagger: item1=150ms, item2=250ms, item3=350ms...
-          final delay = (index == 0 ? 150 : (150 + 100 * math.min(index, 4) + 60 * math.max(0, index - 4))).toInt();
-
-          return TweenAnimationBuilder<double>(
-            tween: Tween(begin: 0.0, end: 1.0),
-            duration: const Duration(milliseconds: 550),
-            curve: const Cubic(0.22, 1, 0.36, 1),
-            builder: (context, value, child) {
-              return Transform.translate(
-                offset: Offset(0, 32 * (1 - value)),
-                child: Transform.scale(
-                  scale: 0.98 + 0.02 * value,
-                  child: Opacity(opacity: value, child: child),
-                ),
-              );
-            },
-            child: _RankingCardAnimated(
-              record: r,
-              index: index,
-              isCurrentUser: isCurrentUser,
-              isTop1: isTop1,
-              lateMinutes: lateMinutes,
-              lateDays: lateDays,
-              onTimeDays: onTimeDays,
-              animDelay: Duration(milliseconds: delay),
-            ),
-          );
-        },
-      ),
-    );
-  }
 }
-
-// ============================================================================
-// ANIMATED CARDS (Tap Feedback + Internal Animations)
-// ============================================================================
 
 class _HistoryCardAnimated extends StatefulWidget {
   final dynamic record;
@@ -1678,6 +1437,239 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
               ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================================
+// STATS POPUP DIALOG
+// ============================================================================
+class _StatsPopup extends StatefulWidget {
+  final Map<String, dynamic>? user;
+  final List<dynamic> historyRecords;
+  final List<dynamic> rankingList;
+  final bool isLoadingHistory;
+  final bool isLoadingRanking;
+  final VoidCallback onClose;
+  final VoidCallback onLoadHistory;
+  final Future<void> Function() onLoadHistoryBg;
+  final VoidCallback onLoadRanking;
+  final Future<void> Function() onLoadRankingBg;
+  final VoidCallback onEnsureLoggedIn;
+  final VoidCallback onRefreshData;
+
+  const _StatsPopup({
+    required this.user, required this.historyRecords, required this.rankingList,
+    required this.isLoadingHistory, required this.isLoadingRanking,
+    required this.onClose, required this.onLoadHistory, required this.onLoadHistoryBg,
+    required this.onLoadRanking, required this.onLoadRankingBg,
+    required this.onEnsureLoggedIn, required this.onRefreshData,
+  });
+
+  @override
+  State<_StatsPopup> createState() => _StatsPopupState();
+}
+
+class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin {
+  int _tab = 0;
+  late AnimationController _headerCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _headerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (mounted) _headerCtrl.forward();
+    });
+    // Auto-load data
+    if (widget.historyRecords.isEmpty) widget.onLoadHistory();
+    if (widget.rankingList.isEmpty) widget.onLoadRanking();
+  }
+
+  @override
+  void dispose() {
+    _headerCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return SafeArea(
+      child: Center(
+        child: Container(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              begin: Alignment.topCenter, end: Alignment.bottomCenter,
+              colors: [Color(0xFFF0FDF4), Color(0xFFFFF7ED)],
+            ),
+            borderRadius: BorderRadius.circular(24),
+            boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 30, offset: const Offset(0, 10))],
+          ),
+          child: Material(
+            color: Colors.transparent,
+            child: Column(
+              children: [
+                // ── Header: X button + Tabs ──
+                AnimatedBuilder(
+                  animation: _headerCtrl,
+                  builder: (context, child) {
+                    final ht = Curves.easeOutCubic.transform(_headerCtrl.value);
+                    return Transform.translate(
+                      offset: Offset(0, -16 * (1 - ht)),
+                      child: Opacity(opacity: ht, child: child),
+                    );
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 8, 0),
+                    child: Row(
+                      children: [
+                        // Tab switcher
+                        Expanded(
+                          child: Container(
+                            height: 36,
+                            decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(20)),
+                            child: LayoutBuilder(builder: (ctx, c) {
+                              final hw = c.maxWidth / 2;
+                              return Stack(children: [
+                                AnimatedPositioned(
+                                  duration: const Duration(milliseconds: 350), curve: Curves.easeInOutCubic,
+                                  left: _tab == 0 ? 0 : hw, top: 0, bottom: 0, width: hw,
+                                  child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
+                                    boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))])),
+                                ),
+                                Row(children: [
+                                  _tabBtn('Cá nhân', 0), _tabBtn('Xếp hạng', 1),
+                                ]),
+                              ]);
+                            }),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        // X close button
+                        GestureDetector(
+                          onTap: widget.onClose,
+                          child: Container(
+                            width: 36, height: 36,
+                            decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withOpacity(0.06)),
+                            child: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF374151)),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                // ── List content ──
+                Expanded(
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(16),
+                    child: AnimatedSwitcher(
+                      duration: const Duration(milliseconds: 400),
+                      switchInCurve: Curves.easeOutCubic,
+                      transitionBuilder: (child, anim) => FadeTransition(opacity: anim,
+                        child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.03), end: Offset.zero).animate(anim), child: child)),
+                      child: _tab == 0
+                          ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryContent())
+                          : KeyedSubtree(key: const ValueKey(1), child: _buildRankingContent()),
+                    ),
+                  ),
+                ),
+                // ── OK Button ──
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                  child: SizedBox(
+                    width: double.infinity, height: 48,
+                    child: ElevatedButton(
+                      onPressed: widget.onClose,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF111827),
+                        foregroundColor: Colors.white,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                        elevation: 0,
+                      ),
+                      child: const Text('OK', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, letterSpacing: 0.5)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _tabBtn(String label, int idx) {
+    return Expanded(child: GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () {
+        setState(() => _tab = idx);
+        if (idx == 0) { widget.historyRecords.isEmpty ? widget.onLoadHistory() : widget.onLoadHistoryBg(); }
+        else { widget.rankingList.isEmpty ? widget.onLoadRanking() : widget.onLoadRankingBg(); }
+      },
+      child: Center(child: AnimatedDefaultTextStyle(
+        duration: const Duration(milliseconds: 200),
+        style: TextStyle(fontSize: 13, fontWeight: _tab == idx ? FontWeight.w600 : FontWeight.w400,
+          color: _tab == idx ? const Color(0xFF111827) : const Color(0xFF6B7280).withOpacity(0.7)),
+        child: Text(label),
+      )),
+    ));
+  }
+
+  Widget _buildHistoryContent() {
+    if (widget.historyRecords.isEmpty && widget.isLoadingHistory) return const SkeletonList(count: 5, isRanking: false);
+    if (widget.historyRecords.isEmpty) return Center(child: TextButton.icon(onPressed: widget.onLoadHistory, icon: const Icon(Icons.refresh, size: 18), label: const Text('Tải lại')));
+    int maxLate = 0;
+    for (final r in widget.historyRecords) { final lm = ((r['late_minutes'] ?? 0) as num).toInt(); if (lm > maxLate) maxLate = lm; }
+    return RefreshIndicator(
+      onRefresh: widget.onLoadHistoryBg, color: const Color(0xFFF97316),
+      child: ListView.builder(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        itemCount: widget.historyRecords.length,
+        itemBuilder: (ctx, i) {
+          final r = widget.historyRecords[i];
+          final isLate = r['status'] == 'late';
+          final lateMin = ((r['late_minutes'] ?? 0) as num).toInt();
+          final delay = (i == 0 ? 150 : (150 + 80 * math.min(i, 3) + 50 * math.max(0, i - 3))).toInt();
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0), duration: const Duration(milliseconds: 500), curve: const Cubic(0.22, 1, 0.36, 1),
+            builder: (ctx, val, child) => Transform.translate(offset: Offset(0, 28 * (1 - val)),
+              child: Transform.scale(scale: 0.98 + 0.02 * val, child: Opacity(opacity: val, child: child))),
+            child: _HistoryCardAnimated(record: r, isLate: isLate, lateMin: lateMin, isFirst: i == 0,
+              isMaxLate: isLate && lateMin == maxLate && maxLate > 0, animDelay: Duration(milliseconds: delay)),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildRankingContent() {
+    if (widget.rankingList.isEmpty && widget.isLoadingRanking) return const SkeletonList(count: 5, isRanking: true);
+    if (widget.rankingList.isEmpty) return Center(child: TextButton.icon(onPressed: widget.onLoadRanking, icon: const Icon(Icons.refresh, size: 18), label: const Text('Tải lại')));
+    return RefreshIndicator(
+      onRefresh: widget.onLoadRankingBg, color: const Color(0xFFF97316),
+      child: ListView.builder(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+        itemCount: widget.rankingList.length,
+        itemBuilder: (ctx, i) {
+          final r = widget.rankingList[i];
+          final isCurrentUser = widget.user != null && r['email'] == widget.user!['email'];
+          final lateMinutes = ((r['total_late_minutes'] ?? 0) as num).toInt();
+          final lateDays = ((r['late_days'] ?? 0) as num).toInt();
+          final onTimeDays = ((r['on_time_days'] ?? 0) as num).toInt();
+          final delay = (i == 0 ? 150 : (150 + 100 * math.min(i, 4) + 60 * math.max(0, i - 4))).toInt();
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0), duration: const Duration(milliseconds: 550), curve: const Cubic(0.22, 1, 0.36, 1),
+            builder: (ctx, val, child) => Transform.translate(offset: Offset(0, 32 * (1 - val)),
+              child: Transform.scale(scale: 0.98 + 0.02 * val, child: Opacity(opacity: val, child: child))),
+            child: _RankingCardAnimated(record: r, index: i, isCurrentUser: isCurrentUser, isTop1: i == 0,
+              lateMinutes: lateMinutes, lateDays: lateDays, onTimeDays: onTimeDays, animDelay: Duration(milliseconds: delay)),
+          );
+        },
       ),
     );
   }
