@@ -73,11 +73,11 @@ class LocationService {
   ]) async {
     try {
       final officeLat =
-          (settings?['office_lat'] as num?)?.toDouble() ?? defaultOfficeLat;
+          double.tryParse(settings?['office_lat']?.toString() ?? '') ?? defaultOfficeLat;
       final officeLng =
-          (settings?['office_lng'] as num?)?.toDouble() ?? defaultOfficeLng;
+          double.tryParse(settings?['office_lng']?.toString() ?? '') ?? defaultOfficeLng;
       final radius =
-          (settings?['office_radius'] as num?)?.toDouble() ??
+          double.tryParse(settings?['office_radius']?.toString() ?? '') ??
           defaultRadiusMeters;
 
       if (debugFakeLocation) {
@@ -105,25 +105,45 @@ class LocationService {
       // mất "User Gesture Token" → không bao giờ hiện popup xin quyền!
       // ═══════════════════════════════════════════════════════════
       if (kIsWeb) {
-        final Position? position = await Geolocator.getCurrentPosition(
-          locationSettings: const LocationSettings(
-            accuracy: LocationAccuracy.best,
-            timeLimit: Duration(seconds: 15),
-          ),
-        );
-        if (position == null) {
-          return {'available': false, 'error': 'Không thể lấy vị trí hiện tại.'};
+        try {
+          final Position? position = await Geolocator.getCurrentPosition(
+            locationSettings: const LocationSettings(
+              accuracy: LocationAccuracy.best,
+              timeLimit: Duration(seconds: 15),
+            ),
+          );
+          if (position == null) {
+            return {
+              'available': false,
+              'permission_denied': false,
+              'error': 'Không thể lấy vị trí hiện tại.',
+            };
+          }
+          final distance = distanceTo(position.latitude, position.longitude, officeLat, officeLng);
+          return {
+            'available': true,
+            'permission_denied': false,
+            'latitude': position.latitude,
+            'longitude': position.longitude,
+            'accuracy': position.accuracy,
+            'distance': distance,
+            'radius': radius,
+            'in_range': distance <= radius,
+          };
+        } catch (e) {
+          // Lỗi GeolocationPositionError code 1 = PERMISSION_DENIED
+          final errStr = e.toString().toLowerCase();
+          final isDenied = errStr.contains('permission') ||
+              errStr.contains('denied') ||
+              errStr.contains('1');
+          return {
+            'available': false,
+            'permission_denied': isDenied,
+            'error': isDenied
+                ? 'Quyền Vị trí bị từ chối. Vui lòng bật lại trong cài đặt trình duyệt.'
+                : e.toString(),
+          };
         }
-        final distance = distanceTo(position.latitude, position.longitude, officeLat, officeLng);
-        return {
-          'available': true,
-          'latitude': position.latitude,
-          'longitude': position.longitude,
-          'accuracy': position.accuracy,
-          'distance': distance,
-          'radius': radius,
-          'in_range': distance <= radius,
-        };
       }
 
       // --- Native (Android / iOS app) flow ---

@@ -14,7 +14,10 @@ import '../services/api_service.dart';
 import '../services/location_service.dart';
 import '../widgets/checkin_bottom_sheet.dart';
 import '../widgets/error_bottom_sheet.dart';
+import '../widgets/skeleton_card.dart';
+import '../widgets/count_up_text.dart';
 import '../services/web_sign_in.dart' as web;
+import 'dart:math' as math;
 
 class CheckinScreen extends StatefulWidget {
   const CheckinScreen({super.key});
@@ -59,6 +62,7 @@ class _CheckinScreenState extends State<CheckinScreen>
   bool _isLocationValid = false;
   String _locationStatusText = '';
   bool _isFetchingLocation = false;
+  bool _locationPermissionDenied = false; // true khi user đã bấm Từ chối quyền GPS
 
   // --- Interaction state ---
   bool _isDragging = false;
@@ -92,11 +96,8 @@ class _CheckinScreenState extends State<CheckinScreen>
     _wifiTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
       if (mounted && !_isCheckedIn) {
         _checkNetwork();
-        // KHÔNG auto-check location trên Web vì Safari sẽ âm thầm block
-        // khi nó bị gọi từ Timer thay vì thao tác tay của User.
-        if (!kIsWeb) {
-          _checkLocation();
-        }
+        // Gọi checkLocation trên Web để tự động hiển thị popup hỏi quyền theo yêu cầu
+        _checkLocation();
       }
     });
 
@@ -139,10 +140,8 @@ class _CheckinScreenState extends State<CheckinScreen>
     await _restoreCachedUser(); // Khôi phục tài khoản đã lưu trước đó
     await _checkNetwork();
     
-    // Cố gắng check location lúc init, nhưng nếu trên web thì có thể fail (cần chờ user swipe)
-    if (!kIsWeb) {
-      await _checkLocation();
-    }
+    // Mở popup hỏi quyền vị trí ngay khi vừa vào web
+    await _checkLocation();
     
     // Nếu đã có user từ cache, tải dữ liệu ngầm
     if (_user != null) {
@@ -187,6 +186,8 @@ class _CheckinScreenState extends State<CheckinScreen>
       if (!mounted) return;
       setState(() {
         _locationInfo = locInfo;
+        final denied = locInfo['permission_denied'] == true;
+        _locationPermissionDenied = denied;
         if (locInfo['available'] == true) {
           final distance = (locInfo['distance'] as double).round();
           final radius = (locInfo['radius'] as double).round();
@@ -199,7 +200,9 @@ class _CheckinScreenState extends State<CheckinScreen>
           }
         } else {
           _isLocationValid = false;
-          _locationStatusText = locInfo['error'] ?? 'GPS không khả dụng';
+          _locationStatusText = denied
+              ? 'Quyền Vị trí bị từ chối'
+              : (locInfo['error'] ?? 'GPS không khả dụng');
         }
       });
     } finally {
@@ -434,6 +437,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         _wifiStatusText = 'Đã hoàn tất điểm danh';
         _wifiSubText = res['checkin']?['message'] ?? 'Bạn đã ghi nhận hôm nay.';
         _loadHistoryBg();
+        _loadRankingBg();
         return true;
       } else {
         if (res['already_checked_in'] == true) {
@@ -636,10 +640,20 @@ class _CheckinScreenState extends State<CheckinScreen>
       await GoogleSignIn.instance.signOut();
     }
     
+    // Xoá cache để tránh rò rỉ dữ liệu cross-account
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove('cached_history');
+      await prefs.remove('cached_ranking');
+    } catch (_) {}
+    
     setState(() {
       _user = null;
       _isCheckedIn = false;
       _showHistory = false;
+      _historyRecords = [];
+      _rankingList = [];
+      _statsSubTab = 0;
       _checkNetwork();
     });
   }
@@ -1060,65 +1074,86 @@ class _CheckinScreenState extends State<CheckinScreen>
                       color: const Color(0xFFE5E7EB),
                       borderRadius: BorderRadius.circular(20),
                     ),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() => _statsSubTab = 0);
-                              if (_historyRecords.isEmpty) _loadHistory();
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              decoration: BoxDecoration(
-                                color: _statsSubTab == 0 ? Colors.white : Colors.transparent,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: _statsSubTab == 0
-                                    ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))]
-                                    : [],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  'Cá nhân',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: _statsSubTab == 0 ? const Color(0xFF111827) : const Color(0xFF6B7280),
-                                  ),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final halfW = constraints.maxWidth / 2;
+                        return Stack(
+                          children: [
+                            // --- Sliding pill ---
+                            AnimatedPositioned(
+                              duration: const Duration(milliseconds: 350),
+                              curve: Curves.easeInOutCubic,
+                              left: _statsSubTab == 0 ? 0 : halfW,
+                              top: 0, bottom: 0,
+                              width: halfW,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  color: Colors.white,
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))],
                                 ),
                               ),
                             ),
-                          ),
-                        ),
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() => _statsSubTab = 1);
-                              if (_rankingList.isEmpty) _loadRanking();
-                            },
-                            child: AnimatedContainer(
-                              duration: const Duration(milliseconds: 200),
-                              decoration: BoxDecoration(
-                                color: _statsSubTab == 1 ? Colors.white : Colors.transparent,
-                                borderRadius: BorderRadius.circular(20),
-                                boxShadow: _statsSubTab == 1
-                                    ? [const BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))]
-                                    : [],
-                              ),
-                              child: Center(
-                                child: Text(
-                                  'Xếp hạng',
-                                  style: TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: _statsSubTab == 1 ? const Color(0xFF111827) : const Color(0xFF6B7280),
+                            // --- Tab buttons ---
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      setState(() => _statsSubTab = 0);
+                                      if (_historyRecords.isEmpty) {
+                                        _loadHistory();
+                                      } else {
+                                        _loadHistoryBg();
+                                      }
+                                    },
+                                    child: Center(
+                                      child: AnimatedDefaultTextStyle(
+                                        duration: const Duration(milliseconds: 200),
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: _statsSubTab == 0 ? FontWeight.w600 : FontWeight.w400,
+                                          color: _statsSubTab == 0
+                                              ? const Color(0xFF111827)
+                                              : const Color(0xFF6B7280).withOpacity(0.7),
+                                        ),
+                                        child: const Text('Cá nhân'),
+                                      ),
+                                    ),
                                   ),
                                 ),
-                              ),
+                                Expanded(
+                                  child: GestureDetector(
+                                    behavior: HitTestBehavior.opaque,
+                                    onTap: () {
+                                      setState(() => _statsSubTab = 1);
+                                      if (_rankingList.isEmpty) {
+                                        _loadRanking();
+                                      } else {
+                                        _loadRankingBg();
+                                      }
+                                    },
+                                    child: Center(
+                                      child: AnimatedDefaultTextStyle(
+                                        duration: const Duration(milliseconds: 200),
+                                        style: TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: _statsSubTab == 1 ? FontWeight.w600 : FontWeight.w400,
+                                          color: _statsSubTab == 1
+                                              ? const Color(0xFF111827)
+                                              : const Color(0xFF6B7280).withOpacity(0.7),
+                                        ),
+                                        child: const Text('Xếp hạng'),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
-                          ),
-                        ),
-                      ],
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -1137,9 +1172,26 @@ class _CheckinScreenState extends State<CheckinScreen>
             )
           else
             Expanded(
-              child: _statsSubTab == 0
-                  ? _buildHistoryList()
-                  : _buildRankingList(),
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 450),
+                switchInCurve: Curves.easeOutCubic,
+                switchOutCurve: Curves.easeInCubic,
+                transitionBuilder: (child, animation) {
+                  return FadeTransition(
+                    opacity: animation,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.04),
+                        end: Offset.zero,
+                      ).animate(animation),
+                      child: child,
+                    ),
+                  );
+                },
+                child: _statsSubTab == 0
+                    ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryList())
+                    : KeyedSubtree(key: const ValueKey(1), child: _buildRankingList()),
+              ),
             ),
         ],
       ),
@@ -1149,221 +1201,515 @@ class _CheckinScreenState extends State<CheckinScreen>
 
 
   Widget _buildHistoryList() {
+    // Skeleton loading
     if (_historyRecords.isEmpty && _isLoadingHistory) {
-      return const Center(child: CircularProgressIndicator());
+      return const SkeletonList(count: 6, isRanking: false);
     }
     if (_historyRecords.isEmpty) {
-      return const Center(
-        child: Text(
-          'Lịch sử hiện đang trống',
-          style: TextStyle(color: Colors.black54),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Lịch sử hiện đang trống', style: TextStyle(color: Colors.black54)),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: _loadHistory,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Tải lại'),
+            ),
+          ],
         ),
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
-      itemCount: _historyRecords.length,
-      itemBuilder: (context, index) {
-        final r = _historyRecords[index];
-        final isLate = r['status'] == 'late';
-        return Container(
-          margin: const EdgeInsets.only(bottom: 12),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.white.withAlpha(200),
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    r['date'] ?? '',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: 15,
-                    ),
-                  ),
-                  Text(
-                    isLate ? 'Trễ ${r['late_minutes']} phút' : 'Đúng giờ',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: isLate ? Colors.orange : Colors.green,
-                    ),
-                  ),
-                ],
-              ),
-              Text(
-                r['checkin_time']?.toString().substring(0, 5) ?? '',
-                style: const TextStyle(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 18,
+    // Find max late minutes for pulse effect
+    int maxLate = 0;
+    for (final r in _historyRecords) {
+      final lm = ((r['late_minutes'] ?? 0) as num).toInt();
+      if (lm > maxLate) maxLate = lm;
+    }
+
+    return RefreshIndicator(
+      onRefresh: () async { await _loadHistoryBg(); },
+      color: const Color(0xFFF97316),
+      child: ListView.builder(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 8),
+        itemCount: _historyRecords.length,
+        itemBuilder: (context, index) {
+          final r = _historyRecords[index];
+          final isLate = r['status'] == 'late';
+          final lateMin = ((r['late_minutes'] ?? 0) as num).toInt();
+          final isFirst = index == 0;
+          final isMaxLate = isLate && lateMin == maxLate && maxLate > 0;
+
+          // Stagger: item1=150ms, item2=230ms, item3=310ms...
+          final delay = (index == 0 ? 150 : (150 + 80 * math.min(index, 3) + 50 * math.max(0, index - 3))).toInt();
+
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 500),
+            curve: const Cubic(0.22, 1, 0.36, 1), // easeOutExpo
+            builder: (context, val, child) {
+              return Transform.translate(
+                offset: Offset(0, 28 * (1 - val)),
+                child: Transform.scale(
+                  scale: 0.98 + 0.02 * val,
+                  child: Opacity(opacity: val, child: child),
                 ),
-              ),
-            ],
-          ),
-        );
-      },
+              );
+            },
+            child: _HistoryCardAnimated(
+              record: r,
+              isLate: isLate,
+              lateMin: lateMin,
+              isFirst: isFirst,
+              isMaxLate: isMaxLate,
+              animDelay: Duration(milliseconds: delay),
+            ),
+          );
+        },
+      ),
     );
   }
 
   Widget _buildRankingList() {
+    // Skeleton loading
     if (_rankingList.isEmpty && _isLoadingRanking) {
-      return const Center(child: CircularProgressIndicator());
+      return const SkeletonList(count: 6, isRanking: true);
     }
     if (_rankingList.isEmpty) {
-      return const Center(
-        child: Text(
-          'Bảng xếp hạng đang trống',
-          style: TextStyle(color: Color(0xFF9CA3AF)),
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('Bảng xếp hạng đang trống', style: TextStyle(color: Color(0xFF9CA3AF))),
+            const SizedBox(height: 12),
+            TextButton.icon(
+              onPressed: _loadRanking,
+              icon: const Icon(Icons.refresh, size: 18),
+              label: const Text('Tải lại'),
+            ),
+          ],
         ),
       );
     }
 
-    const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
+    return RefreshIndicator(
+      onRefresh: () async { await _loadRankingBg(); },
+      color: const Color(0xFFF97316),
+      child: ListView.builder(
+        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        itemCount: _rankingList.length,
+        itemBuilder: (context, index) {
+          final r = _rankingList[index];
+          final isCurrentUser = _user != null && r['email'] == _user!['email'];
+          final lateMinutes = ((r['total_late_minutes'] ?? 0) as num).toInt();
+          final lateDays = ((r['late_days'] ?? 0) as num).toInt();
+          final onTimeDays = ((r['on_time_days'] ?? 0) as num).toInt();
+          final isTop1 = index == 0;
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
-      itemCount: _rankingList.length,
-      itemBuilder: (context, index) {
-        final r = _rankingList[index];
-        final isCurrentUser = _user != null && r['email'] == _user!['email'];
-        final lateMinutes = (r['total_late_minutes'] ?? 0) as int;
-        final lateDays = (r['late_days'] ?? 0) as int;
-        final onTimeDays = (r['on_time_days'] ?? 0) as int;
-        final hasMedal = index < 3;
-        final isTop1 = index == 0;
+          // Stagger: item1=150ms, item2=250ms, item3=350ms...
+          final delay = (index == 0 ? 150 : (150 + 100 * math.min(index, 4) + 60 * math.max(0, index - 4))).toInt();
 
-        return Container(
-          margin: const EdgeInsets.only(bottom: 10),
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          decoration: BoxDecoration(
-            color: isCurrentUser
-                ? const Color(0xFFFFF7ED)
-                : Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(
-              color: isCurrentUser
-                  ? const Color(0xFFFBBF24)
-                  : isTop1
-                      ? const Color(0xFFFFE4E1)
-                      : const Color(0xFFF3F4F6),
-              width: isCurrentUser || isTop1 ? 1.5 : 1,
+          return TweenAnimationBuilder<double>(
+            tween: Tween(begin: 0.0, end: 1.0),
+            duration: const Duration(milliseconds: 550),
+            curve: const Cubic(0.22, 1, 0.36, 1),
+            builder: (context, value, child) {
+              return Transform.translate(
+                offset: Offset(0, 32 * (1 - value)),
+                child: Transform.scale(
+                  scale: 0.98 + 0.02 * value,
+                  child: Opacity(opacity: value, child: child),
+                ),
+              );
+            },
+            child: _RankingCardAnimated(
+              record: r,
+              index: index,
+              isCurrentUser: isCurrentUser,
+              isTop1: isTop1,
+              lateMinutes: lateMinutes,
+              lateDays: lateDays,
+              onTimeDays: onTimeDays,
+              animDelay: Duration(milliseconds: delay),
             ),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.04),
-                blurRadius: 8,
-                offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              // --- Rank / Medal ---
-              SizedBox(
-                width: 32,
-                child: Center(
-                  child: hasMedal
-                      ? Text(medals[index], style: const TextStyle(fontSize: 20))
-                      : Text(
-                          '${index + 1}',
-                          style: TextStyle(
-                            fontWeight: FontWeight.w700,
-                            fontSize: 15,
-                            color: Colors.black.withOpacity(0.3),
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(width: 8),
-
-              // --- Avatar ---
-              CircleAvatar(
-                radius: 18,
-                backgroundImage: (r['avatar'] ?? '').isNotEmpty
-                    ? NetworkImage(r['avatar'])
-                    : null,
-                backgroundColor: const Color(0xFFE5E7EB),
-                child: (r['avatar'] ?? '').isEmpty
-                    ? Text(
-                        (r['name'] ?? '?').substring(0, 1).toUpperCase(),
-                        style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6B7280)),
-                      )
-                    : null,
-              ),
-              const SizedBox(width: 12),
-
-              // --- Name + stats ---
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      r['name'] ?? '',
-                      style: TextStyle(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 14,
-                        color: isCurrentUser
-                            ? const Color(0xFFD97706)
-                            : const Color(0xFF111827),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    const SizedBox(height: 2),
-                    Text(
-                      '$onTimeDays đúng giờ  •  $lateDays muộn',
-                      style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
-                    ),
-                  ],
-                ),
-              ),
-
-              // --- Late minutes badge ---
-              if (lateMinutes > 0)
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: isTop1
-                        ? const Color(0xFFFFE4E1)
-                        : const Color(0xFFFFF3F0),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: Text(
-                    '${lateMinutes}phút',
-                    style: TextStyle(
-                      fontSize: 12,
-                      fontWeight: FontWeight.w700,
-                      color: isTop1
-                          ? const Color(0xFFEF4444)
-                          : const Color(0xFFF97316),
-                    ),
-                  ),
-                )
-              else
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                  decoration: BoxDecoration(
-                    color: const Color(0xFFF0FDF4),
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: const Text(
-                    '✨ Chưa muộn',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: Color(0xFF22C55E),
-                    ),
-                  ),
-                ),
-            ],
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }
+
+// ============================================================================
+// ANIMATED CARDS (Tap Feedback + Internal Animations)
+// ============================================================================
+
+class _HistoryCardAnimated extends StatefulWidget {
+  final dynamic record;
+  final bool isLate;
+  final int lateMin;
+  final bool isFirst;
+  final bool isMaxLate;
+  final Duration animDelay;
+
+  const _HistoryCardAnimated({
+    required this.record,
+    required this.isLate,
+    required this.lateMin,
+    required this.isFirst,
+    required this.isMaxLate,
+    required this.animDelay,
+  });
+
+  @override
+  State<_HistoryCardAnimated> createState() => _HistoryCardAnimatedState();
+}
+
+class _HistoryCardAnimatedState extends State<_HistoryCardAnimated> with SingleTickerProviderStateMixin {
+  bool _isPressed = false;
+  late AnimationController _pulseCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    if (widget.isFirst || widget.isMaxLate) {
+      Future.delayed(widget.animDelay + const Duration(milliseconds: 300), () {
+        if (mounted) {
+          _pulseCtrl.forward(from: 0).then((_) => _pulseCtrl.reverse());
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 100),
+        curve: Curves.easeOutCubic,
+        transform: Matrix4.identity()..scale(_isPressed ? 0.975 : 1.0),
+        transformAlignment: Alignment.center,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.circular(16),
+          boxShadow: [
+            if (widget.isFirst)
+              BoxShadow(
+                color: Colors.black.withOpacity(0.04),
+                blurRadius: 12,
+                offset: const Offset(0, 4),
+              )
+          ],
+          border: Border.all(
+            color: widget.isFirst ? const Color(0xFFF3F4F6) : Colors.transparent,
+            width: 1,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  widget.record['date'] ?? '',
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                ),
+                const SizedBox(height: 2),
+                if (widget.isLate)
+                  AnimatedBuilder(
+                    animation: _pulseCtrl,
+                    builder: (context, child) {
+                      return Transform.scale(
+                        scale: 1.0 + (_pulseCtrl.value * 0.05),
+                        alignment: Alignment.centerLeft,
+                        child: child,
+                      );
+                    },
+                    child: Row(
+                      children: [
+                        const Text('Trễ ', style: TextStyle(fontSize: 13, color: Colors.orange)),
+                        CountUpText(
+                          value: widget.lateMin,
+                          suffix: ' phút',
+                          delay: widget.animDelay + const Duration(milliseconds: 180),
+                          duration: const Duration(milliseconds: 600),
+                          style: const TextStyle(fontSize: 13, color: Colors.orange, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  )
+                else
+                  const Text('Đúng giờ', style: TextStyle(fontSize: 13, color: Colors.green)),
+              ],
+            ),
+            TweenAnimationBuilder<double>(
+              tween: Tween(begin: 0.0, end: 1.0),
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeOutCubic,
+              builder: (context, value, child) {
+                return Opacity(
+                  opacity: value,
+                  child: Transform.translate(
+                    offset: Offset(12 * (1 - value), 0),
+                    child: child,
+                  ),
+                );
+              },
+              child: Text(
+                () {
+                  final t = widget.record['checkin_time']?.toString() ?? '';
+                  return t.length >= 5 ? t.substring(0, 5) : t;
+                }(),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _RankingCardAnimated extends StatefulWidget {
+  final dynamic record;
+  final int index;
+  final bool isCurrentUser;
+  final bool isTop1;
+  final int lateMinutes;
+  final int lateDays;
+  final int onTimeDays;
+  final Duration animDelay;
+
+  const _RankingCardAnimated({
+    required this.record,
+    required this.index,
+    required this.isCurrentUser,
+    required this.isTop1,
+    required this.lateMinutes,
+    required this.lateDays,
+    required this.onTimeDays,
+    required this.animDelay,
+  });
+
+  @override
+  State<_RankingCardAnimated> createState() => _RankingCardAnimatedState();
+}
+
+class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerProviderStateMixin {
+  bool _isPressed = false;
+  late AnimationController _breatheCtrl;
+  late AnimationController _medalCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _breatheCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500));
+    if (widget.isCurrentUser) {
+      _breatheCtrl.repeat(reverse: true);
+    }
+
+    _medalCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    if (widget.index < 3) {
+      Future.delayed(widget.animDelay + const Duration(milliseconds: 300), () {
+        if (mounted) _medalCtrl.forward();
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _breatheCtrl.dispose();
+    _medalCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    const medals = ['\uD83E\uDD47', '\uD83E\uDD48', '\uD83E\uDD49'];
+    final hasMedal = widget.index < 3;
+
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _isPressed = true),
+      onTapUp: (_) => setState(() => _isPressed = false),
+      onTapCancel: () => setState(() => _isPressed = false),
+      child: AnimatedBuilder(
+        animation: _breatheCtrl,
+        builder: (context, child) {
+          final breathe = widget.isCurrentUser ? _breatheCtrl.value : 0.0;
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 100),
+            curve: Curves.easeOutCubic,
+            transform: Matrix4.identity()..scale(_isPressed ? 0.975 : 1.0),
+            transformAlignment: Alignment.center,
+            margin: const EdgeInsets.only(bottom: 10),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            decoration: BoxDecoration(
+              color: widget.isCurrentUser
+                  ? Color.lerp(const Color(0xFFFFF7ED), const Color(0xFFFEF3C7), breathe)
+                  : Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: widget.isCurrentUser
+                    ? const Color(0xFFFBBF24)
+                    : widget.isTop1
+                        ? const Color(0xFFFFE4E1)
+                        : const Color(0xFFF3F4F6),
+                width: widget.isCurrentUser || widget.isTop1 ? 1.5 : 1,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: widget.isCurrentUser 
+                      ? const Color(0xFFFBBF24).withOpacity(0.1 + breathe * 0.1) 
+                      : Colors.black.withOpacity(0.04),
+                  blurRadius: widget.isCurrentUser ? 12 : 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: child,
+          );
+        },
+        child: Row(
+          children: [
+            // --- Rank / Medal ---
+            SizedBox(
+              width: 32,
+              child: Center(
+                child: hasMedal
+                    ? AnimatedBuilder(
+                        animation: CurvedAnimation(parent: _medalCtrl, curve: Curves.elasticOut),
+                        builder: (context, child) {
+                          final val = _medalCtrl.value == 0 ? 0.0 : CurvedAnimation(parent: _medalCtrl, curve: Curves.elasticOut).value;
+                          return Transform.scale(
+                            scale: 0.5 + (0.5 * val),
+                            child: child,
+                          );
+                        },
+                        child: Text(medals[widget.index], style: const TextStyle(fontSize: 20)),
+                      )
+                    : Text(
+                        '${widget.index + 1}',
+                        style: TextStyle(
+                          fontWeight: FontWeight.w700,
+                          fontSize: 15,
+                          color: Colors.black.withOpacity(0.3),
+                        ),
+                      ),
+              ),
+            ),
+            const SizedBox(width: 8),
+
+            // --- Avatar ---
+            CircleAvatar(
+              radius: 18,
+              backgroundImage: (widget.record['avatar'] ?? '').isNotEmpty
+                  ? NetworkImage(widget.record['avatar'])
+                  : null,
+              backgroundColor: const Color(0xFFE5E7EB),
+              child: (widget.record['avatar'] ?? '').isEmpty
+                  ? Text(
+                      (widget.record['name'] ?? '?').substring(0, 1).toUpperCase(),
+                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6B7280)),
+                    )
+                  : null,
+            ),
+            const SizedBox(width: 12),
+
+            // --- Name + stats ---
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.record['name'] ?? '',
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: 14,
+                      color: widget.isCurrentUser
+                          ? const Color(0xFFD97706)
+                          : const Color(0xFF111827),
+                    ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    '${widget.onTimeDays} đúng giờ  •  ${widget.lateDays} muộn',
+                    style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                  ),
+                ],
+              ),
+            ),
+
+            // --- Late minutes badge ---
+            if (widget.lateMinutes > 0)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: widget.isTop1
+                      ? const Color(0xFFFFE4E1)
+                      : const Color(0xFFFFF3F0),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  children: [
+                    CountUpText(
+                      value: widget.lateMinutes,
+                      delay: widget.animDelay + const Duration(milliseconds: 180),
+                      duration: const Duration(milliseconds: 800),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: widget.isTop1 ? const Color(0xFFEF4444) : const Color(0xFFF97316),
+                      ),
+                    ),
+                    Text(
+                      'phút',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                        color: widget.isTop1 ? const Color(0xFFEF4444) : const Color(0xFFF97316),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFF0FDF4),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: const Text(
+                  '✨ Chưa muộn',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFF22C55E),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
