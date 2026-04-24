@@ -43,6 +43,10 @@ class _CheckinScreenState extends State<CheckinScreen>
   late AnimationController _springController;
   Animation<double>? _springAnimation;
 
+  // --- Container Transform Animation ---
+  late AnimationController _expandCtrl;
+  late AnimationController _headerSlideCtrl;
+
   // --- WiFi state ---
   Map<String, dynamic> _wifiInfo = {};
   Map<String, dynamic> _deviceInfo = {};
@@ -114,6 +118,15 @@ class _CheckinScreenState extends State<CheckinScreen>
       duration: const Duration(milliseconds: 600),
     );
 
+    _expandCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _headerSlideCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
+
     // Lắng nghe sự kiện đăng nhập từ Google (cần cho Web renderButton)
     _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((event) {
       if (event is GoogleSignInAuthenticationEventSignIn) {
@@ -130,6 +143,8 @@ class _CheckinScreenState extends State<CheckinScreen>
     _wifiTimer?.cancel();
     _bounceController.dispose();
     _springController.dispose();
+    _expandCtrl.dispose();
+    _headerSlideCtrl.dispose();
     _authSubscription?.cancel();
     super.dispose();
   }
@@ -658,43 +673,60 @@ class _CheckinScreenState extends State<CheckinScreen>
     });
   }
 
+  // ═══════════════════════════════════════════════
+  // CONTAINER TRANSFORM: Open / Close Stats
+  // ═══════════════════════════════════════════════
+  void _openStats() {
+    if (_user == null) return;
+    setState(() => _showHistory = true);
+    _expandCtrl.forward();
+    Future.delayed(const Duration(milliseconds: 300), () {
+      if (mounted) _headerSlideCtrl.forward();
+    });
+  }
+
+  void _closeStats() {
+    _headerSlideCtrl.reverse();
+    Future.delayed(const Duration(milliseconds: 200), () {
+      _expandCtrl.reverse().then((_) {
+        if (mounted) setState(() => _showHistory = false);
+      });
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: EtherBackground(
         child: SafeArea(
-          child: Column(
+          child: Stack(
             children: [
-              // TopBar ẩn đi khi đang xem Stats (card trắng đã có nút Back riêng)
-              if (!_showHistory) _buildTopBar(),
-              Expanded(
-                child: AnimatedSwitcher(
-                  duration: const Duration(milliseconds: 380),
-                  reverseDuration: const Duration(milliseconds: 280),
-                  switchInCurve: Curves.easeOutCubic,
-                  switchOutCurve: Curves.easeInCubic,
-                  transitionBuilder: (child, animation) {
-                    // Stats view: trượt lên từ dưới
-                    // Home view: fade + slide xuống nhẹ khi quay lại
-                    final isStats = child.key == const ValueKey('stats');
-                    final slideIn = Tween<Offset>(
-                      begin: isStats ? const Offset(0, 1) : const Offset(0, -0.05),
-                      end: Offset.zero,
-                    ).animate(animation);
-                    return SlideTransition(
-                      position: slideIn,
-                      child: FadeTransition(
-                        opacity: animation,
-                        child: child,
+              // ── Home layer (always present) ──
+              Column(
+                children: [
+                  _buildTopBar(),
+                  Expanded(child: _buildHomeView(key: const ValueKey('home'))),
+                  _buildFooter(),
+                ],
+              ),
+              // ── Stats overlay with Container Transform ──
+              if (_showHistory || _expandCtrl.isAnimating)
+                AnimatedBuilder(
+                  animation: _expandCtrl,
+                  builder: (context, _) {
+                    final t = Curves.easeOutCubic.transform(_expandCtrl.value);
+                    return Positioned.fill(
+                      child: Transform.scale(
+                        scale: 0.85 + (0.15 * t),
+                        alignment: Alignment.topCenter,
+                        child: Opacity(
+                          opacity: t,
+                          child: _buildStatsView(key: const ValueKey('stats')),
+                        ),
                       ),
                     );
                   },
-                  child: _showHistory
-                      ? _buildStatsView(key: const ValueKey('stats'))
-                      : _buildHomeView(key: const ValueKey('home')),
                 ),
-              ),
-              if (!_showHistory) _buildFooter(),
             ],
           ),
         ),
@@ -713,7 +745,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         children: [
           GestureDetector(
             onTap: () {
-              if (_user != null) setState(() => _showHistory = true);
+              if (_user != null) _openStats();
             },
             onLongPress: _logout,
             child: Container(
@@ -1041,158 +1073,96 @@ class _CheckinScreenState extends State<CheckinScreen>
   // STATS (HISTORY + RANKING) VIEW
   // ═══════════════════════════════════════════════
   Widget _buildStatsView({Key? key}) {
-    return Container(
-      key: key,
-      decoration: const BoxDecoration(
-        color: Color(0xFFF8F9FA),
-        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-      ),
-      child: Column(
-        children: [
-          const SizedBox(height: 8),
-          Container(
-            width: 36, height: 4,
-            decoration: BoxDecoration(
-              color: const Color(0xFFE5E7EB),
-              borderRadius: BorderRadius.circular(2),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Padding(
-            padding: const EdgeInsets.only(left: 8, right: 16, top: 4, bottom: 8),
-            child: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF374151), size: 20),
-                  onPressed: () => setState(() => _showHistory = false),
-                ),
-                Expanded(
-                  child: Container(
-                    margin: const EdgeInsets.only(right: 40),
-                    height: 36,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFE5E7EB),
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final halfW = constraints.maxWidth / 2;
-                        return Stack(
-                          children: [
-                            // --- Sliding pill ---
-                            AnimatedPositioned(
-                              duration: const Duration(milliseconds: 350),
-                              curve: Curves.easeInOutCubic,
-                              left: _statsSubTab == 0 ? 0 : halfW,
-                              top: 0, bottom: 0,
-                              width: halfW,
-                              child: Container(
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(20),
-                                  boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))],
-                                ),
-                              ),
-                            ),
-                            // --- Tab buttons ---
-                            Row(
-                              children: [
-                                Expanded(
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: () {
-                                      setState(() => _statsSubTab = 0);
-                                      if (_historyRecords.isEmpty) {
-                                        _loadHistory();
-                                      } else {
-                                        _loadHistoryBg();
-                                      }
-                                    },
-                                    child: Center(
-                                      child: AnimatedDefaultTextStyle(
-                                        duration: const Duration(milliseconds: 200),
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: _statsSubTab == 0 ? FontWeight.w600 : FontWeight.w400,
-                                          color: _statsSubTab == 0
-                                              ? const Color(0xFF111827)
-                                              : const Color(0xFF6B7280).withOpacity(0.7),
-                                        ),
-                                        child: const Text('Cá nhân'),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                                Expanded(
-                                  child: GestureDetector(
-                                    behavior: HitTestBehavior.opaque,
-                                    onTap: () {
-                                      setState(() => _statsSubTab = 1);
-                                      if (_rankingList.isEmpty) {
-                                        _loadRanking();
-                                      } else {
-                                        _loadRankingBg();
-                                      }
-                                    },
-                                    child: Center(
-                                      child: AnimatedDefaultTextStyle(
-                                        duration: const Duration(milliseconds: 200),
-                                        style: TextStyle(
-                                          fontSize: 13,
-                                          fontWeight: _statsSubTab == 1 ? FontWeight.w600 : FontWeight.w400,
-                                          color: _statsSubTab == 1
-                                              ? const Color(0xFF111827)
-                                              : const Color(0xFF6B7280).withOpacity(0.7),
-                                        ),
-                                        child: const Text('Xếp hạng'),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ],
-                        );
-                      },
-                    ),
-                  ),
-                ),
+    return AnimatedBuilder(
+      animation: _expandCtrl,
+      builder: (context, _) {
+        final gt = ((_expandCtrl.value - 0.3) / 0.7).clamp(0.0, 1.0);
+        return Container(
+          key: key,
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                Color.lerp(const Color(0xFFF8F9FA), const Color(0xFFF0FDF4), gt)!,
+                Color.lerp(const Color(0xFFF8F9FA), const Color(0xFFFFF7ED), gt)!,
               ],
             ),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(24)),
           ),
-
-          if (_user == null)
-            Expanded(
-              child: Center(
-                child: ElevatedButton(
-                  onPressed: _ensureLoggedIn,
-                  child: const Text('Đăng nhập để xem'),
-                ),
-              ),
-            )
-          else
-            Expanded(
-              child: AnimatedSwitcher(
-                duration: const Duration(milliseconds: 450),
-                switchInCurve: Curves.easeOutCubic,
-                switchOutCurve: Curves.easeInCubic,
-                transitionBuilder: (child, animation) {
-                  return FadeTransition(
-                    opacity: animation,
-                    child: SlideTransition(
-                      position: Tween<Offset>(
-                        begin: const Offset(0, 0.04),
-                        end: Offset.zero,
-                      ).animate(animation),
-                      child: child,
-                    ),
-                  );
+          child: Column(
+            children: [
+              const SizedBox(height: 8),
+              Container(width: 36, height: 4, decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(2))),
+              const SizedBox(height: 4),
+              AnimatedBuilder(
+                animation: _headerSlideCtrl,
+                builder: (context, child) {
+                  final ht = Curves.easeOutCubic.transform(_headerSlideCtrl.value);
+                  return Transform.translate(offset: Offset(0, -20 * (1 - ht)), child: Opacity(opacity: ht, child: child));
                 },
-                child: _statsSubTab == 0
-                    ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryList())
-                    : KeyedSubtree(key: const ValueKey(1), child: _buildRankingList()),
+                child: _buildStatsHeader(),
               ),
+              if (_user == null)
+                Expanded(child: Center(child: ElevatedButton(onPressed: _ensureLoggedIn, child: const Text('Đăng nhập để xem'))))
+              else
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 450),
+                    switchInCurve: Curves.easeOutCubic,
+                    switchOutCurve: Curves.easeInCubic,
+                    transitionBuilder: (child, anim) => FadeTransition(opacity: anim,
+                      child: SlideTransition(position: Tween<Offset>(begin: const Offset(0, 0.04), end: Offset.zero).animate(anim), child: child)),
+                    child: _statsSubTab == 0
+                        ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryList())
+                        : KeyedSubtree(key: const ValueKey(1), child: _buildRankingList()),
+                  ),
+                ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildStatsHeader() {
+    return Padding(
+      padding: const EdgeInsets.only(left: 8, right: 16, top: 4, bottom: 8),
+      child: Row(
+        children: [
+          IconButton(icon: const Icon(Icons.arrow_back_ios_new_rounded, color: Color(0xFF374151), size: 20), onPressed: _closeStats),
+          Expanded(
+            child: Container(
+              margin: const EdgeInsets.only(right: 40),
+              height: 36,
+              decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(20)),
+              child: LayoutBuilder(builder: (context, constraints) {
+                final halfW = constraints.maxWidth / 2;
+                return Stack(children: [
+                  AnimatedPositioned(
+                    duration: const Duration(milliseconds: 350), curve: Curves.easeInOutCubic,
+                    left: _statsSubTab == 0 ? 0 : halfW, top: 0, bottom: 0, width: halfW,
+                    child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
+                      boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))])),
+                  ),
+                  Row(children: [
+                    Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque,
+                      onTap: () { setState(() => _statsSubTab = 0); _historyRecords.isEmpty ? _loadHistory() : _loadHistoryBg(); },
+                      child: Center(child: AnimatedDefaultTextStyle(duration: const Duration(milliseconds: 200),
+                        style: TextStyle(fontSize: 13, fontWeight: _statsSubTab == 0 ? FontWeight.w600 : FontWeight.w400,
+                          color: _statsSubTab == 0 ? const Color(0xFF111827) : const Color(0xFF6B7280).withOpacity(0.7)),
+                        child: const Text('Cá nhân'))))),
+                    Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque,
+                      onTap: () { setState(() => _statsSubTab = 1); _rankingList.isEmpty ? _loadRanking() : _loadRankingBg(); },
+                      child: Center(child: AnimatedDefaultTextStyle(duration: const Duration(milliseconds: 200),
+                        style: TextStyle(fontSize: 13, fontWeight: _statsSubTab == 1 ? FontWeight.w600 : FontWeight.w400,
+                          color: _statsSubTab == 1 ? const Color(0xFF111827) : const Color(0xFF6B7280).withOpacity(0.7)),
+                        child: const Text('Xếp hạng'))))),
+                  ]),
+                ]);
+              }),
             ),
+          ),
         ],
       ),
     );
