@@ -121,7 +121,11 @@ class ApiService {
       'longitude': locationData['longitude']?.toString() ?? '',
       'gps_distance': locationData['distance']?.toString() ?? '',
       'public_ip': locationData['public_ip']?.toString() ?? '',
-      'checkin_method': locationData['checkin_method']?.toString() ?? ''
+      'checkin_method': locationData['checkin_method']?.toString() ?? '',
+      'qr_token_id': locationData['qr_token_id']?.toString() ?? '',
+      'qr_issuer_email': locationData['qr_issuer_email']?.toString() ?? '',
+      'qr_issuer_name': locationData['qr_issuer_name']?.toString() ?? '',
+      'qr_scanner_email': locationData['qr_scanner_email']?.toString() ?? ''
     });
   }
 }

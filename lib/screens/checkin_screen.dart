@@ -12,8 +12,12 @@ import '../services/public_ip_service.dart';
 import '../services/device_service.dart';
 import '../services/api_service.dart';
 import '../services/location_service.dart';
+import '../services/qr_checkin_service.dart';
 import '../widgets/checkin_bottom_sheet.dart';
 import '../widgets/error_bottom_sheet.dart';
+import '../widgets/leave_request_sheet.dart';
+import '../widgets/qr_checkin_sheet.dart';
+import 'qr_scanner_screen.dart';
 import '../widgets/skeleton_card.dart';
 import '../widgets/count_up_text.dart';
 import '../services/web_sign_in.dart' as web;
@@ -242,38 +246,23 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   Future<void> _checkNetwork() async {
-    // Bước 1: Vẫn lấy WiFi info (dùng cho logging trên Native)
     final wifiInfo = await WifiService.getInfo();
     if (!mounted) return;
     _wifiInfo = wifiInfo;
 
-    // Bước 2: Lấy Public IP và verify với IP công ty
-    final ipResult = await PublicIpService.verify(_settings);
+    final publicIp = await PublicIpService.getPublicIp();
     if (!mounted) return;
 
     setState(() {
-      _publicIp = ipResult['public_ip'] ?? '';
-
-      if (ipResult['skipped'] == true) {
-        // Chưa cấu hình office_public_ip → cho qua, chờ admin cấu hình
-        _wifiStatusText = 'Chưa cấu hình IP công ty';
-        _wifiSubText = 'Admin cần thêm office_public_ip vào Google Sheet Settings.';
-        _isIpValid = true;
-        _isWifiValid = true;
-      } else if (ipResult['verified'] == true) {
-        _wifiStatusText = 'Đã sẵn sàng điểm danh...';
-        _wifiSubText = 'IP mạng: $_publicIp ✓ Khớp mạng công ty.';
-        _isIpValid = true;
-        _isWifiValid = true;
-      } else {
-        _wifiStatusText = 'Mạng không hợp lệ';
-        _wifiSubText = ipResult['reason'] ?? 'IP mạng không khớp với công ty.';
-        _isIpValid = false;
-        _isWifiValid = false;
-      }
+      _publicIp = publicIp;
+      _wifiStatusText = 'Đã sẵn sàng điểm danh...';
+      _wifiSubText = publicIp.isEmpty
+          ? 'Hệ thống sẽ ghi nhận bằng GPS và QR/WiFi khi có.'
+          : 'IP mạng: $publicIp • chỉ dùng để ghi log.';
+      _isIpValid = true;
+      _isWifiValid = true;
     });
   }
-
   /// Xử lý GoogleSignInAccount sau khi đăng nhập thành công (dùng chung native + web)
   Future<bool> _handleGoogleAccount(GoogleSignInAccount account) async {
     try {
@@ -395,7 +384,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     try {
       if (!await _ensureLoggedIn()) return false;
 
-      // Re-sync settings từ server để đảm bảo có office_public_ip mới nhất
+      // Re-sync settings từ server để đảm bảo có cấu hình GPS/QR mới nhất
       if (_user != null) {
         try {
           final freshResult = await ApiService.loginAndSync(
@@ -415,7 +404,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       _publicIp = freshIp;
 
       // GATE 1: Kiểm tra Public IP khớp với công ty
-      final ipResult = await PublicIpService.verify(_settings);
+      final ipResult = {'verified': true, 'skipped': true};
       if (ipResult['verified'] != true && ipResult['skipped'] != true) {
         _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
         return false;
@@ -433,8 +422,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       }
 
       // Xác định phương thức checkin
-      String checkinMethod = 'public_ip';
-      if (_isLocationValid) checkinMethod += '+gps';
+      String checkinMethod = _isLocationValid ? 'gps' : 'manual';
       if (!kIsWeb && _wifiInfo['ssid'] != null && _wifiInfo['ssid'] != 'Web Browser') {
         checkinMethod += '+wifi';
       }
@@ -563,6 +551,302 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   // Tải nền tĩnh lặng để có sẵn data trước khi mở Tab
+
+  void _showQrIssuerSheet() async {
+    if (!await _ensureLoggedIn()) return;
+    if (!mounted || _user == null) return;
+
+    final result = await showGeneralDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      barrierDismissible: true,
+      barrierLabel: 'QR',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 48.0, left: 16, right: 16),
+              child: Material(
+                color: Colors.transparent,
+                child: QrIssuerSheet(user: _user!, deviceInfo: _deviceInfo),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          child: FadeTransition(opacity: anim1, child: child),
+        );
+      },
+    );
+
+    if (result is String && mounted) {
+      _showErrorPopup(result);
+    }
+  }
+
+  void _showQrScannerSheet() async {
+    if (!await _ensureLoggedIn()) return;
+    if (!mounted) return;
+
+    final rawQr = await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (context) => const QrScannerScreen(),
+      ),
+    );
+
+    if (rawQr is String && mounted) {
+      _showQrCheckinResultSheet(rawQr);
+    }
+  }
+
+  void _showQrCheckinResultSheet(String rawQr) {
+    if (!mounted) return;
+
+    showGeneralDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 48.0, left: 16, right: 16),
+              child: Material(
+                color: Colors.transparent,
+                child: CheckinBottomSheet(
+                  checkinFuture: _performQrCheckin(rawQr),
+                  locationInfo: _locationInfo,
+                  isAlreadyCheckedIn: false,
+                  checkinTime: _wifiSubText,
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          child: FadeTransition(
+            opacity: anim1,
+            child: child,
+          ),
+        );
+      },
+    ).then((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  Future<bool> _performQrCheckin(String rawQr) async {
+    if (_user == null) throw Exception('Bạn cần đăng nhập trước.');
+
+    final locInfo = await LocationService.getInfo(_settings);
+    if (locInfo['available'] != true || locInfo['in_range'] != true) {
+      throw Exception('Bạn phải ở trong phạm vi công ty và cấp quyền vị trí để quét QR.');
+    }
+
+    final publicIp = await PublicIpService.getPublicIp(forceRefresh: true);
+    final result = await QrCheckinService.checkinByQr(
+      email: _user!['email'],
+      qrPayload: rawQr,
+      wifiInfo: _wifiInfo,
+      deviceInfo: _deviceInfo,
+      locationInfo: locInfo,
+      publicIp: publicIp,
+    );
+
+    if (result['success'] == true || result['already_checked_in'] == true) {
+      if (!mounted) return true;
+      setState(() {
+        _isCheckedIn = true;
+        _locationInfo = locInfo;
+        _isLocationValid = true;
+        _publicIp = publicIp;
+        _wifiStatusText = result['already_checked_in'] == true
+            ? 'Đã điểm danh hôm nay'
+            : 'Đã hoàn tất điểm danh';
+        _wifiSubText = result['checkin']?['message'] ?? 'Check-in QR thành công.';
+      });
+      _loadHistoryBg();
+      _loadRankingBg();
+      return true;
+    }
+
+    throw Exception(result['error'] ?? 'Check-in QR thất bại.');
+  }
+
+  void _showLeaveRequestSheet() async {
+    if (!await _ensureLoggedIn()) return;
+    if (!mounted || _user == null) return;
+
+    final result = await showGeneralDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      barrierDismissible: true,
+      barrierLabel: 'Leave',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24.0, left: 16, right: 16),
+              child: Material(
+                color: Colors.transparent,
+                child: LeaveRequestSheet(user: _user!),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          child: FadeTransition(opacity: anim1, child: child),
+        );
+      },
+    );
+
+    if (result is Map && mounted) {
+      _showLeaveSuccessSheet(result);
+    }
+  }
+
+  void _showLeaveSuccessSheet(Map result) {
+    showGeneralDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      barrierDismissible: true,
+      barrierLabel: 'LeaveSuccess',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 48.0, left: 16, right: 16),
+              child: Material(
+                color: Colors.transparent,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(24),
+                  ),
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Align(
+                        alignment: Alignment.topRight,
+                        child: GestureDetector(
+                          onTap: () => Navigator.pop(context),
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: const BoxDecoration(
+                              color: Color(0xFFF3F4F6),
+                              shape: BoxShape.circle,
+                            ),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: Color(0xFF4B5563),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Image.asset(
+                        'assets/images/imgCheck.png',
+                        width: 140,
+                        height: 140,
+                        fit: BoxFit.contain,
+                      ),
+                      const SizedBox(height: 20),
+                      const Text(
+                        'Đăng ký thành công',
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.w800,
+                          color: Color(0xFF1F2937),
+                          fontFamily: 'Inter',
+                          height: 1.2,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        result['start'] == result['end']
+                            ? 'Đơn nghỉ ${result['type']?.toString().toLowerCase()} ngày ${result['start']} đã được ghi nhận'
+                            : 'Đơn nghỉ ${result['type']?.toString().toLowerCase()} từ ${result['start']} đến ${result['end']} đã được ghi nhận',
+                        style: const TextStyle(
+                          fontSize: 15,
+                          color: Color(0xFF9CA3AF),
+                          fontFamily: 'Inter',
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 32),
+                      SizedBox(
+                        width: double.infinity,
+                        height: 52,
+                        child: ElevatedButton(
+                          onPressed: () => Navigator.pop(context),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF000000),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(26),
+                            ),
+                            elevation: 0,
+                          ),
+                          child: const Text(
+                            'OK',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              fontFamily: 'Inter',
+                              letterSpacing: 0.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          child: FadeTransition(opacity: anim1, child: child),
+        );
+      },
+    );
+  }
   Future<void> _loadHistoryBg() async {
     if (_user == null) return;
     try {
@@ -926,121 +1210,135 @@ class _CheckinScreenState extends State<CheckinScreen>
       padding: const EdgeInsets.only(bottom: 32, left: 24, right: 24),
       child: Column(
         children: [
-          GestureDetector(
-            onVerticalDragStart: (details) {
-              if (_isCheckingIn || _isLoggingIn) return;
-              _springController.stop();
-              setState(() => _isDragging = true);
-            },
-            onVerticalDragUpdate: (details) {
-              if (_isCheckingIn || _isLoggingIn) return;
-              setState(() {
-                _dragOffset += details.primaryDelta!;
-                if (_dragOffset > 0) _dragOffset = 0;
-                if (_dragOffset < -200) _dragOffset = -200;
-              });
-            },
-            onVerticalDragEnd: (details) {
-              if (_isCheckingIn || _isLoggingIn) return;
-              if (_dragOffset < -80 ||
-                  (details.primaryVelocity != null &&
-                      details.primaryVelocity! < -300)) {
-                _showCheckinResultSheet();
-              }
-              _executeSpringBack();
-            },
-            onVerticalDragCancel: () {
-              if (_isCheckingIn || _isLoggingIn) return;
-              _executeSpringBack();
-            },
-            onTap: () {
-              if (_isCheckingIn || _isLoggingIn) return;
-              _showCheckinResultSheet();
-            },
-            child: AnimatedBuilder(
-              animation: Listenable.merge([
-                _bounceAnimation,
-                _springController,
-              ]),
-              builder: (context, child2) {
-                final double currentSpringOffset = _springAnimation != null
-                    ? _springAnimation!.value
-                    : _dragOffset;
-                final double bounceOffset = _isDragging
-                    ? 0
-                    : _bounceAnimation.value;
-                final double totalOffset =
-                    (_isDragging ? _dragOffset : currentSpringOffset) -
-                    bounceOffset;
+          LayoutBuilder(
+            builder: (context, constraints) {
+              const double thumbSize = 64.0;
+              final double maxDrag = constraints.maxWidth - thumbSize;
 
-                return Stack(
-                  clipBehavior: Clip.none,
-                  alignment: Alignment.bottomCenter,
-                  children: [
-                    // Drag Trail (Gradient shadow)
-                    if (totalOffset < -2)
-                      Positioned(
-                        bottom: 0,
-                        child: Container(
-                          width: 64,
-                          height: 64 + (-totalOffset),
+              return AnimatedBuilder(
+                animation: _springController,
+                builder: (context, child) {
+                  final double currentOffset = _isDragging
+                      ? _dragOffset
+                      : (_springAnimation?.value ?? _dragOffset);
+                  
+                  final double visualOffset = currentOffset.clamp(0.0, maxDrag);
+
+                  return Container(
+                    height: 64,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(32),
+                      border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Stack(
+                      alignment: Alignment.centerLeft,
+                      children: [
+                        Container(
+                          width: thumbSize + visualOffset,
+                          height: 64,
                           decoration: BoxDecoration(
+                            color: const Color(0xFFDCF8F3),
                             borderRadius: BorderRadius.circular(32),
-                            gradient: LinearGradient(
-                              begin: Alignment.topCenter,
-                              end: Alignment.bottomCenter,
-                              colors: [
-                                Colors.black.withOpacity(0.7),
-                                Colors.black.withOpacity(0.0),
-                              ],
+                          ),
+                        ),
+                        Center(
+                          child: Text(
+                            'Vuốt sang phải để check-in',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                              color: visualOffset > maxDrag * 0.5
+                                  ? const Color(0xFF1F2937).withOpacity((1 - (visualOffset / maxDrag)).clamp(0.0, 1.0))
+                                  : const Color(0xFF1F2937),
+                              fontFamily: 'Inter',
                             ),
                           ),
                         ),
-                      ),
-
-                    // The actual button
-                    Transform.translate(
-                      offset: Offset(0, totalOffset),
-                      child: Container(
-                        width: 64,
-                        height: 64,
-                        decoration: BoxDecoration(
-                          color: const Color(0xFF000000),
-                          borderRadius: BorderRadius.circular(32),
-                        ),
-                        child: _isCheckingIn || _isLoggingIn
-                            ? const Padding(
-                                padding: EdgeInsets.all(16.0),
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 2,
-                                ),
-                              )
-                            : Center(
-                                child: SvgPicture.asset(
-                                  'assets/icons/ic_arrow_up.svg',
-                                  width: 28,
-                                  height: 28,
-                                ),
+                        Positioned(
+                          left: visualOffset,
+                          child: GestureDetector(
+                            onHorizontalDragStart: (details) {
+                              if (_isCheckingIn || _isLoggingIn) return;
+                              _springController.stop();
+                              setState(() => _isDragging = true);
+                            },
+                            onHorizontalDragUpdate: (details) {
+                              if (_isCheckingIn || _isLoggingIn) return;
+                              setState(() {
+                                _dragOffset += details.primaryDelta!;
+                                if (_dragOffset < 0) _dragOffset = 0;
+                                if (_dragOffset > maxDrag + 20) _dragOffset = maxDrag + 20;
+                              });
+                            },
+                            onHorizontalDragEnd: (details) {
+                              if (_isCheckingIn || _isLoggingIn) return;
+                              if (_dragOffset > maxDrag * 0.75 ||
+                                  (details.primaryVelocity != null &&
+                                      details.primaryVelocity! > 300)) {
+                                setState(() => _dragOffset = maxDrag);
+                                _showCheckinResultSheet();
+                                Future.delayed(const Duration(milliseconds: 500), () {
+                                  if (mounted) _executeSpringBack();
+                                });
+                              } else {
+                                _executeSpringBack();
+                              }
+                            },
+                            onHorizontalDragCancel: () {
+                              if (_isCheckingIn || _isLoggingIn) return;
+                              _executeSpringBack();
+                            },
+                            child: Container(
+                              width: thumbSize,
+                              height: thumbSize,
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF000000),
+                                borderRadius: BorderRadius.circular(32),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withOpacity(0.2),
+                                    blurRadius: 8,
+                                    offset: const Offset(0, 2),
+                                  ),
+                                ],
                               ),
-                      ),
+                              child: _isCheckingIn || _isLoggingIn
+                                  ? const Padding(
+                                      padding: EdgeInsets.all(16.0),
+                                      child: CircularProgressIndicator(
+                                        color: Colors.white,
+                                        strokeWidth: 2,
+                                      ),
+                                    )
+                                  : const Center(
+                                      child: Icon(
+                                        Icons.keyboard_arrow_right_rounded,
+                                        color: Colors.white,
+                                        size: 32,
+                                      ),
+                                    ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
-                  ],
-                );
-              },
-            ),
+                  );
+                },
+              );
+            },
           ),
-          const SizedBox(height: 16),
-          const Text(
-            "Vuốt lên để checkin",
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.w700,
-              color: Color(0xFF1F2937),
-              fontFamily: 'Inter',
-            ),
-          ),
+          const SizedBox(height: 24),
           const SizedBox(height: 8),
+          _buildQuickActions(),
+          const SizedBox(height: 12),
           RichText(
             text: const TextSpan(
               text: "By MBBank ",
@@ -1066,6 +1364,31 @@ class _CheckinScreenState extends State<CheckinScreen>
     );
   }
 
+
+  Widget _buildQuickActions() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _QuickActionButton(
+          icon: Icons.qr_code_rounded,
+          label: 'Xuất QR',
+          onTap: _showQrIssuerSheet,
+        ),
+        const SizedBox(width: 10),
+        _QuickActionButton(
+          icon: Icons.qr_code_scanner_rounded,
+          label: 'Quét QR',
+          onTap: _showQrScannerSheet,
+        ),
+        const SizedBox(width: 10),
+        _QuickActionButton(
+          icon: Icons.event_busy_rounded,
+          label: 'Nghỉ',
+          onTap: _showLeaveRequestSheet,
+        ),
+      ],
+    );
+  }
   void _executeSpringBack() {
     final startOffset = _dragOffset;
     setState(() => _isDragging = false);
@@ -1076,6 +1399,57 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 }
 
+
+class _QuickActionButton extends StatelessWidget {
+  final IconData icon;
+  final String label;
+  final VoidCallback onTap;
+
+  const _QuickActionButton({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(18),
+      child: Container(
+        width: 78,
+        padding: const EdgeInsets.symmetric(vertical: 10),
+        decoration: BoxDecoration(
+          color: Colors.white.withOpacity(0.82),
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.white.withOpacity(0.8)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.05),
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 20, color: const Color(0xFF111827)),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w700,
+                color: Color(0xFF374151),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
 class _HistoryCardAnimated extends StatefulWidget {
   final dynamic record;
   final bool isLate;
@@ -1732,5 +2106,7 @@ class _SequentialRevealItemState extends State<_SequentialRevealItem> with Singl
     );
   }
 }
+
+
 
 
