@@ -154,10 +154,17 @@ class _LeaveRequestSheetState extends State<LeaveRequestSheet> {
                 DropdownButtonFormField<String>(
                   value: _leaveType,
                   decoration: _inputDecoration('Loại nghỉ'),
+                  isExpanded: true,
+                  dropdownColor: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: Color(0xFF6B7280)),
                   items: _typeLabels.entries
                       .map((entry) => DropdownMenuItem(
                             value: entry.key,
-                            child: Text(entry.value),
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4.0),
+                              child: Text(entry.value, style: const TextStyle(fontSize: 15)),
+                            ),
                           ))
                       .toList(),
                   onChanged: (value) {

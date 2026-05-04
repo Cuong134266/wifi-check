@@ -177,6 +177,28 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                 ),
               ),
             ),
+          // Export QR Button
+          Positioned(
+            bottom: _error != null ? 100 : 40,
+            left: 24,
+            right: 24,
+            child: ElevatedButton.icon(
+              onPressed: () {
+                Navigator.of(context).pop('ISSUE_QR');
+              },
+              icon: const Icon(Icons.qr_code_rounded),
+              label: const Text('Xuất mã QR của tôi', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black,
+                padding: const EdgeInsets.symmetric(vertical: 16),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                elevation: 4,
+              ),
+            ),
+          ),
           // Error Message
           if (_error != null)
             Positioned(
