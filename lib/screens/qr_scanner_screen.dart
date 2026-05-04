@@ -18,6 +18,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
   late AnimationController _animationController;
   bool _hasPermission = false;
   bool _cameraReady = false;
+  bool _isSuccess = false;
 
   @override
   void initState() {
@@ -99,8 +100,15 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
     setState(() {
       _handling = true;
+      _isSuccess = true;
       _error = null;
     });
+
+    // Stop scanning animation and play success animation
+    _animationController.stop();
+
+    // Delay to let the user see the success animation (green brackets & checkmark)
+    await Future.delayed(const Duration(milliseconds: 600));
     
     if (mounted) Navigator.of(context).pop(raw);
   }
@@ -141,6 +149,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     }
 
     final scanWindowSize = MediaQuery.of(context).size.width * 0.7;
+    final themeColor = _isSuccess ? Colors.greenAccent : Colors.cyanAccent;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -193,32 +202,59 @@ class _QrScannerScreenState extends State<QrScannerScreen>
                   // Corner brackets
                   CustomPaint(
                     size: Size(scanWindowSize, scanWindowSize),
-                    painter: _ScannerBracketsPainter(),
+                    painter: _ScannerBracketsPainter(color: themeColor),
                   ),
-                  // Animated Scanning Line
-                  AnimatedBuilder(
-                    animation: _animationController,
-                    builder: (context, child) {
-                      return Positioned(
-                        top: _animationController.value * (scanWindowSize - 4),
-                        left: 0,
-                        right: 0,
-                        child: Container(
-                          height: 4,
-                          decoration: BoxDecoration(
-                            color: Colors.cyanAccent,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.cyanAccent.withOpacity(0.8),
-                                blurRadius: 12,
-                                spreadRadius: 2,
-                              ),
-                            ],
+                  // Animated Scanning Line or Success Checkmark
+                  if (!_isSuccess)
+                    AnimatedBuilder(
+                      animation: _animationController,
+                      builder: (context, child) {
+                        return Positioned(
+                          top: _animationController.value * (scanWindowSize - 4),
+                          left: 0,
+                          right: 0,
+                          child: Container(
+                            height: 4,
+                            decoration: BoxDecoration(
+                              color: themeColor,
+                              boxShadow: [
+                                BoxShadow(
+                                  color: themeColor.withOpacity(0.8),
+                                  blurRadius: 12,
+                                  spreadRadius: 2,
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  ),
+                        );
+                      },
+                    )
+                  else
+                    // Success checkmark animation
+                    TweenAnimationBuilder<double>(
+                      tween: Tween<double>(begin: 0.0, end: 1.0),
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.elasticOut,
+                      builder: (context, value, child) {
+                        return Center(
+                          child: Transform.scale(
+                            scale: value,
+                            child: Container(
+                              padding: const EdgeInsets.all(16),
+                              decoration: BoxDecoration(
+                                color: Colors.greenAccent.withOpacity(0.2),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(
+                                Icons.check_circle_outline_rounded,
+                                color: Colors.greenAccent,
+                                size: 80,
+                              ),
+                            ),
+                          ),
+                        );
+                      },
+                    ),
                 ],
               ),
             ),
@@ -251,7 +287,7 @@ class _QrScannerScreenState extends State<QrScannerScreen>
             ),
           ),
           // Processing Indicator
-          if (_handling)
+          if (_handling && !_isSuccess)
             Container(
               color: Colors.black54,
               child: const Center(
@@ -316,10 +352,14 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 }
 
 class _ScannerBracketsPainter extends CustomPainter {
+  final Color color;
+
+  _ScannerBracketsPainter({required this.color});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = Colors.cyanAccent
+      ..color = color
       ..style = PaintingStyle.stroke
       ..strokeWidth = 4.0
       ..strokeCap = StrokeCap.round;
@@ -361,5 +401,7 @@ class _ScannerBracketsPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _ScannerBracketsPainter oldDelegate) {
+    return oldDelegate.color != color;
+  }
 }
