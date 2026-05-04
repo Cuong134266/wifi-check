@@ -148,8 +148,11 @@ class _QrScannerScreenState extends State<QrScannerScreen>
       );
     }
 
-    final scanWindowSize = MediaQuery.of(context).size.width * 0.7;
-    final themeColor = _isSuccess ? Colors.greenAccent : Colors.cyanAccent;
+    final screenWidth = MediaQuery.of(context).size.width;
+    final defaultScanWindowSize = screenWidth * 0.7;
+    final successScanWindowSize = screenWidth * 0.35;
+    
+    final themeColor = _isSuccess ? Colors.greenAccent : Colors.white;
 
     return Scaffold(
       backgroundColor: Colors.black,
@@ -165,99 +168,88 @@ class _QrScannerScreenState extends State<QrScannerScreen>
             const Center(
               child: CircularProgressIndicator(color: Colors.cyanAccent),
             ),
-          // Custom Overlay with Cutout
-          ColorFiltered(
-            colorFilter: ColorFilter.mode(
-              Colors.black.withOpacity(0.6),
-              BlendMode.srcOut,
+          // Animated Window Size for Cutout and Brackets
+          TweenAnimationBuilder<double>(
+            tween: Tween<double>(
+              begin: defaultScanWindowSize,
+              end: _isSuccess ? successScanWindowSize : defaultScanWindowSize,
             ),
-            child: Stack(
-              children: [
-                Container(
-                  decoration: const BoxDecoration(
-                    color: Colors.black,
-                    backgroundBlendMode: BlendMode.dstOut,
-                  ),
-                ),
-                Center(
-                  child: Container(
-                    height: scanWindowSize,
-                    width: scanWindowSize,
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(24),
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Scanning Animation and Brackets
-          Center(
-            child: SizedBox(
-              height: scanWindowSize,
-              width: scanWindowSize,
-              child: Stack(
+            duration: const Duration(milliseconds: 300),
+            curve: Curves.easeOutBack,
+            builder: (context, currentSize, child) {
+              return Stack(
                 children: [
-                  // Corner brackets
-                  CustomPaint(
-                    size: Size(scanWindowSize, scanWindowSize),
-                    painter: _ScannerBracketsPainter(color: themeColor),
-                  ),
-                  // Animated Scanning Line or Success Checkmark
-                  if (!_isSuccess)
-                    AnimatedBuilder(
-                      animation: _animationController,
-                      builder: (context, child) {
-                        return Positioned(
-                          top: _animationController.value * (scanWindowSize - 4),
-                          left: 0,
-                          right: 0,
-                          child: Container(
-                            height: 4,
-                            decoration: BoxDecoration(
-                              color: themeColor,
-                              boxShadow: [
-                                BoxShadow(
-                                  color: themeColor.withOpacity(0.8),
-                                  blurRadius: 12,
-                                  spreadRadius: 2,
-                                ),
-                              ],
-                            ),
-                          ),
-                        );
-                      },
-                    )
-                  else
-                    // Success checkmark animation
-                    TweenAnimationBuilder<double>(
-                      tween: Tween<double>(begin: 0.0, end: 1.0),
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.elasticOut,
-                      builder: (context, value, child) {
-                        return Center(
-                          child: Transform.scale(
-                            scale: value,
-                            child: Container(
-                              padding: const EdgeInsets.all(16),
-                              decoration: BoxDecoration(
-                                color: Colors.greenAccent.withOpacity(0.2),
-                                shape: BoxShape.circle,
-                              ),
-                              child: const Icon(
-                                Icons.check_circle_outline_rounded,
-                                color: Colors.greenAccent,
-                                size: 80,
-                              ),
-                            ),
-                          ),
-                        );
-                      },
+                  // Custom Overlay with Cutout
+                  ColorFiltered(
+                    colorFilter: ColorFilter.mode(
+                      Colors.black.withOpacity(0.6),
+                      BlendMode.srcOut,
                     ),
+                    child: Stack(
+                      children: [
+                        Container(
+                          decoration: const BoxDecoration(
+                            color: Colors.black,
+                            backgroundBlendMode: BlendMode.dstOut,
+                          ),
+                        ),
+                        Center(
+                          child: Container(
+                            height: currentSize,
+                            width: currentSize,
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(24),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Scanning Animation and Brackets
+                  Center(
+                    child: SizedBox(
+                      height: currentSize,
+                      width: currentSize,
+                      child: Stack(
+                        children: [
+                          // Corner brackets
+                          CustomPaint(
+                            size: Size(currentSize, currentSize),
+                            painter: _ScannerBracketsPainter(color: themeColor),
+                          ),
+                          // Animated Scanning Line or Success Checkmark
+                          if (!_isSuccess)
+                            AnimatedBuilder(
+                              animation: _animationController,
+                              builder: (context, child) {
+                                return Positioned(
+                                  top: _animationController.value * (currentSize - 4),
+                                  left: 0,
+                                  right: 0,
+                                  child: Container(
+                                    height: 4,
+                                    decoration: BoxDecoration(
+                                      color: themeColor,
+                                      boxShadow: [
+                                        BoxShadow(
+                                          color: themeColor.withOpacity(0.8),
+                                          blurRadius: 12,
+                                          spreadRadius: 2,
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                );
+                              },
+                            )
+                        ],
+                      ),
+                    ),
+                  ),
                 ],
-              ),
-            ),
+              );
+            },
           ),
           // Header Overlay
           Positioned(
