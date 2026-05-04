@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:permission_handler/permission_handler.dart';
 
@@ -30,11 +31,24 @@ class _QrScannerScreenState extends State<QrScannerScreen>
   }
 
   Future<void> _checkPermission() async {
-    final status = await Permission.camera.request();
-    if (mounted) {
+    if (kIsWeb) {
       setState(() {
-        _hasPermission = status.isGranted;
+        _hasPermission = true;
       });
+      return;
+    }
+    
+    final status = await Permission.camera.request();
+    if (status.isGranted) {
+      setState(() {
+        _hasPermission = true;
+      });
+    } else {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cần quyền camera để quét QR')),
+        );
+      }
     }
   }
 
