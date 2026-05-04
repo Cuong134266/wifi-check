@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 class QrScannerScreen extends StatefulWidget {
   const QrScannerScreen({super.key});
@@ -16,14 +17,25 @@ class _QrScannerScreenState extends State<QrScannerScreen>
   bool _handling = false;
   String? _error;
   late AnimationController _animationController;
+  bool _hasPermission = false;
 
   @override
   void initState() {
     super.initState();
+    _checkPermission();
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+  }
+
+  Future<void> _checkPermission() async {
+    final status = await Permission.camera.request();
+    if (mounted) {
+      setState(() {
+        _hasPermission = status.isGranted;
+      });
+    }
   }
 
   @override
@@ -55,6 +67,34 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
   @override
   Widget build(BuildContext context) {
+    if (!_hasPermission) {
+      return Scaffold(
+        backgroundColor: Colors.black,
+        body: Stack(
+          children: [
+            const Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  CircularProgressIndicator(color: Colors.white),
+                  SizedBox(height: 16),
+                  Text('Đang yêu cầu quyền camera...', style: TextStyle(color: Colors.white)),
+                ],
+              ),
+            ),
+            Positioned(
+              top: 50,
+              left: 16,
+              child: IconButton(
+                icon: const Icon(Icons.close, color: Colors.white, size: 28),
+                onPressed: () => Navigator.of(context).pop(),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     final scanWindowSize = MediaQuery.of(context).size.width * 0.7;
 
     return Scaffold(
@@ -64,6 +104,11 @@ class _QrScannerScreenState extends State<QrScannerScreen>
           MobileScanner(
             controller: _controller,
             onDetect: _handleDetect,
+            errorBuilder: (context, error, Widget? child) {
+              return Center(
+                child: Text('Lỗi Camera: ${error.errorCode.name}', style: const TextStyle(color: Colors.white)),
+              );
+            },
           ),
           // Custom Overlay with Cutout
           ColorFiltered(
