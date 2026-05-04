@@ -12,50 +12,81 @@ class QrScannerScreen extends StatefulWidget {
 
 class _QrScannerScreenState extends State<QrScannerScreen>
     with SingleTickerProviderStateMixin {
-  final MobileScannerController _controller = MobileScannerController(
-    formats: const [BarcodeFormat.qrCode],
-  );
+  MobileScannerController? _controller;
   bool _handling = false;
   String? _error;
   late AnimationController _animationController;
   bool _hasPermission = false;
+  bool _cameraReady = false;
 
   @override
   void initState() {
     super.initState();
-    _checkPermission();
     _animationController = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
     )..repeat(reverse: true);
+    _initCamera();
   }
 
-  Future<void> _checkPermission() async {
-    if (kIsWeb) {
-      setState(() {
-        _hasPermission = true;
-      });
-      return;
-    }
-    
-    final status = await Permission.camera.request();
-    if (status.isGranted) {
-      setState(() {
-        _hasPermission = true;
-      });
-    } else {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Cần quyền camera để quét QR')),
-        );
+  Future<void> _initCamera() async {
+    // On web, skip permission_handler (browser handles it natively)
+    if (!kIsWeb) {
+      final status = await Permission.camera.request();
+      if (!status.isGranted) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cần quyền camera để quét QR')),
+          );
+        }
+        return;
       }
+    }
+
+    if (!mounted) return;
+
+    setState(() {
+      _hasPermission = true;
+    });
+
+    // Create and start the controller
+    final controller = MobileScannerController(
+      formats: const [BarcodeFormat.qrCode],
+    );
+
+    setState(() {
+      _controller = controller;
+    });
+
+    // On web, explicitly start after a short delay to let the widget mount
+    if (kIsWeb) {
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (!mounted) return;
+      try {
+        await controller.start();
+        if (mounted) {
+          setState(() {
+            _cameraReady = true;
+          });
+        }
+      } catch (e) {
+        if (mounted) {
+          setState(() {
+            _error = 'Không thể mở camera: $e';
+          });
+        }
+      }
+    } else {
+      setState(() {
+        _cameraReady = true;
+      });
     }
   }
 
   @override
   void dispose() {
     _animationController.dispose();
-    _controller.dispose();
+    _controller?.dispose();
     super.dispose();
   }
 
@@ -81,18 +112,23 @@ class _QrScannerScreenState extends State<QrScannerScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (!_hasPermission) {
+    // Show loading while waiting for permission/camera
+    if (!_hasPermission || _controller == null) {
       return Scaffold(
         backgroundColor: Colors.black,
         body: Stack(
           children: [
-            const Center(
+            Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
-                  CircularProgressIndicator(color: Colors.white),
-                  SizedBox(height: 16),
-                  Text('Đang yêu cầu quyền camera...', style: TextStyle(color: Colors.white)),
+                  const CircularProgressIndicator(color: Colors.white),
+                  const SizedBox(height: 16),
+                  Text(
+                    _error ?? 'Đang yêu cầu quyền camera...',
+                    style: const TextStyle(color: Colors.white),
+                    textAlign: TextAlign.center,
+                  ),
                 ],
               ),
             ),
@@ -115,10 +151,16 @@ class _QrScannerScreenState extends State<QrScannerScreen>
       backgroundColor: Colors.black,
       body: Stack(
         children: [
+          // Camera feed
           MobileScanner(
-            controller: _controller,
+            controller: _controller!,
             onDetect: _handleDetect,
           ),
+          // Show a hint if camera is still loading on web
+          if (!_cameraReady)
+            const Center(
+              child: CircularProgressIndicator(color: Colors.cyanAccent),
+            ),
           // Custom Overlay with Cutout
           ColorFiltered(
             colorFilter: ColorFilter.mode(
