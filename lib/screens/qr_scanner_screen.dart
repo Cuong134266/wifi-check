@@ -104,11 +104,6 @@ class _QrScannerScreenState extends State<QrScannerScreen>
           MobileScanner(
             controller: _controller,
             onDetect: _handleDetect,
-            errorBuilder: (context, error, Widget? child) {
-              return Center(
-                child: Text('Lỗi Camera: ${error.errorCode.name}', style: const TextStyle(color: Colors.white)),
-              );
-            },
           ),
           // Custom Overlay with Cutout
           ColorFiltered(
