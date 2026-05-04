@@ -95146,7 +95146,7 @@ $S:0}
 A.apy.prototype={
 $2(a,b){var s=this.a,r=s.z
 r===$&&A.a()
-return A.el(r,new A.apx(s,b.b-60-8),null)},
+return A.el(r,new A.apx(s,b.b-56-8),null)},
 $S:592}
 A.apx.prototype={
 $2(a,b){var s,r,q,p,o,n,m,l,k,j,i,h=null,g=this.a
@@ -95161,13 +95161,13 @@ q=A.bI(32)
 o=A.pn(B.bg,1)
 n=t.V
 m=A.b([new A.bm(0,B.C,A.am(13,B.i.p()>>>16&255,B.i.p()>>>8&255,B.i.p()&255),B.ih,10)],n)
-l=A.bN(h,h,B.m,h,h,new A.bA(B.o6,h,h,A.bI(32),h,h,h,B.D),h,64,h,h,h,h,60+p)
+l=A.bN(h,h,B.m,h,h,new A.bA(B.o6,h,h,A.bI(28),h,h,h,B.D),h,56,h,h,h,h,56+p)
 k=A.e6(A.bS("Vu\u1ed1t sang ph\u1ea3i \u0111\u1ec3 check-in",h,h,h,A.eu(h,h,p>r*0.5?A.am(B.d.ao(255*B.d.cq(1-p/r,0,1)),B.dH.p()>>>16&255,B.dH.p()>>>8&255,B.dH.p()&255):B.dH,h,h,h,h,h,"Inter",h,h,16,h,h,B.ch,h,h,!0,h,h,h,h,h,h,h,h),h,h,h),h,h)
-j=A.bI(32)
+j=A.bI(28)
 n=A.b([new A.bm(0,B.C,A.am(51,B.i.p()>>>16&255,B.i.p()>>>8&255,B.i.p()&255),B.e5,8)],n)
 i=g.fr
 i=i?B.T7:B.F3
-return A.bN(h,A.hr(B.h1,A.b([l,k,A.qY(h,A.ha(h,A.bN(h,i,B.m,h,h,new A.bA(B.i,h,h,j,n,h,h,B.D),h,60,h,h,h,h,60),B.a_,!1,h,h,new A.apt(g),h,new A.apu(g,r),new A.apv(g),new A.apw(g,r),h,h,h,h,h,h,h,h,h,h,h,h),h,h,p,h,h,h)],t.p),B.O,B.bb,h),B.m,h,h,new A.bA(B.k,h,o,q,m,h,h,B.D),h,64,h,B.Ic,h,h,h)},
+return A.bN(h,A.hr(B.h1,A.b([l,k,A.qY(h,A.ha(h,A.bN(h,i,B.m,h,h,new A.bA(B.i,h,h,j,n,h,h,B.D),h,56,h,h,h,h,56),B.a_,!1,h,h,new A.apt(g),h,new A.apu(g,r),new A.apv(g),new A.apw(g,r),h,h,h,h,h,h,h,h,h,h,h,h),h,h,p,h,h,h)],t.p),B.O,B.bb,h),B.m,h,h,new A.bA(B.k,h,o,q,m,h,h,B.D),h,64,h,B.Ic,h,h,h)},
 $S:103}
 A.apv.prototype={
 $1(a){var s=this.a,r=s.fr
@@ -99877,7 +99877,7 @@ B.I9=new A.au(24,0,24,24)
 B.Ia=new A.au(24,0,24,32)
 B.Ib=new A.au(24,24,24,0)
 B.kj=new A.au(24,24,24,24)
-B.Ic=new A.au(2,2,2,2)
+B.Ic=new A.au(3,3,3,3)
 B.Id=new A.au(40,24,40,24)
 B.hE=new A.au(4,0,4,0)
 B.oI=new A.au(4,4,4,4)

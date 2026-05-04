@@ -1220,7 +1220,7 @@ class _CheckinScreenState extends State<CheckinScreen>
               constraints: const BoxConstraints(maxWidth: 400),
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  const double thumbSize = 60.0;
+                  const double thumbSize = 56.0;
                   final double maxDrag = constraints.maxWidth - thumbSize - 8;
 
                   return AnimatedBuilder(
@@ -1234,7 +1234,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
                       return Container(
                         height: 64,
-                        padding: const EdgeInsets.all(2),
+                        padding: const EdgeInsets.all(3),
                         decoration: BoxDecoration(
                           color: Colors.white,
                           borderRadius: BorderRadius.circular(32),
@@ -1252,10 +1252,10 @@ class _CheckinScreenState extends State<CheckinScreen>
                           children: [
                             Container(
                               width: thumbSize + visualOffset,
-                              height: 64,
+                              height: 56,
                               decoration: BoxDecoration(
                                 color: const Color(0xFFDCF8F3),
-                                borderRadius: BorderRadius.circular(32),
+                                borderRadius: BorderRadius.circular(28),
                               ),
                             ),
                             Center(
@@ -1310,7 +1310,7 @@ class _CheckinScreenState extends State<CheckinScreen>
                                   height: thumbSize,
                                   decoration: BoxDecoration(
                                     color: const Color(0xFF000000),
-                                    borderRadius: BorderRadius.circular(32),
+                                    borderRadius: BorderRadius.circular(28),
                                     boxShadow: [
                                       BoxShadow(
                                         color: Colors.black.withOpacity(0.2),
