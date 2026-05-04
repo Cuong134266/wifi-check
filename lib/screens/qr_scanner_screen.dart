@@ -52,34 +52,29 @@ class _QrScannerScreenState extends State<QrScannerScreen>
     // Create and start the controller
     final controller = MobileScannerController(
       formats: const [BarcodeFormat.qrCode],
+      autoStart: false,
     );
 
     setState(() {
       _controller = controller;
     });
 
-    // On web, explicitly start after a short delay to let the widget mount
-    if (kIsWeb) {
-      await Future.delayed(const Duration(milliseconds: 300));
-      if (!mounted) return;
-      try {
-        await controller.start();
-        if (mounted) {
-          setState(() {
-            _cameraReady = true;
-          });
-        }
-      } catch (e) {
-        if (mounted) {
-          setState(() {
-            _error = 'Không thể mở camera: $e';
-          });
-        }
+    // Explicitly start the controller
+    await Future.delayed(const Duration(milliseconds: 300));
+    if (!mounted) return;
+    try {
+      await controller.start();
+      if (mounted) {
+        setState(() {
+          _cameraReady = true;
+        });
       }
-    } else {
-      setState(() {
-        _cameraReady = true;
-      });
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'Không thể mở camera: $e';
+        });
+      }
     }
   }
 
