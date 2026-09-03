@@ -82,12 +82,13 @@ class PublicIpService {
       };
     }
 
+    final cleanCurrentIp = currentIp.trim().replaceAll(RegExp(r'\s+'), '');
     final validIps = officeIp
-        .split(',')
-        .map((e) => e.trim())
+        .split(RegExp(r'[,;\n\r]+'))
+        .map((e) => e.replaceAll(RegExp(r'\s+'), '').trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    final matched = validIps.contains(currentIp);
+    final matched = validIps.contains(cleanCurrentIp);
     return {
       'verified': matched,
       'public_ip': currentIp,

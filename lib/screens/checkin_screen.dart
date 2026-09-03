@@ -163,11 +163,26 @@ class _CheckinScreenState extends State<CheckinScreen>
     
     // Nếu đã có user từ cache, tải dữ liệu ngầm
     if (_user != null) {
+      _refreshSettingsBg();
       _loadHistoryBg();
       _loadRankingBg();
     }
     // Nếu chưa có user: KHÔNG tự đăng nhập ngầm.
     // Người dùng phải tự bấm nút để chọn tài khoản.
+  }
+
+  Future<void> _refreshSettingsBg() async {
+    try {
+      final res = await ApiService.getSettings();
+      if (res['success'] == true && res['settings'] is Map && mounted) {
+        final newSettings = Map<String, dynamic>.from(res['settings'] as Map);
+        setState(() {
+          _settings = newSettings;
+        });
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('cached_settings', jsonEncode(newSettings));
+      }
+    } catch (_) {}
   }
 
   /// Khôi phục tài khoản đã lưu từ SharedPreferences
@@ -394,7 +409,20 @@ class _CheckinScreenState extends State<CheckinScreen>
       }
 
       // GATE 1: Kiểm tra Public IP khớp với công ty (0ms network vì đã có knownIp)
-      final ipResult = await PublicIpService.verify(_settings, knownIp: _publicIp);
+      var ipResult = await PublicIpService.verify(_settings, knownIp: _publicIp);
+      if (ipResult['verified'] != true && ipResult['skipped'] != true) {
+        // Fallback: Nếu cache settings cũ chưa có IP mới từ Google Sheet, fetch settings mới nhất để thử lại
+        try {
+          final freshSettingsRes = await ApiService.getSettings();
+          if (freshSettingsRes['success'] == true && freshSettingsRes['settings'] is Map) {
+            _settings = Map<String, dynamic>.from(freshSettingsRes['settings'] as Map);
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('cached_settings', jsonEncode(_settings));
+            ipResult = await PublicIpService.verify(_settings, knownIp: _publicIp);
+          }
+        } catch (_) {}
+      }
+
       if (ipResult['verified'] != true && ipResult['skipped'] != true) {
         _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
         return false;

@@ -125,7 +125,13 @@ class ApiService {
       'qr_token_id': locationData['qr_token_id']?.toString() ?? '',
       'qr_issuer_email': locationData['qr_issuer_email']?.toString() ?? '',
       'qr_issuer_name': locationData['qr_issuer_name']?.toString() ?? '',
-      'qr_scanner_email': locationData['qr_scanner_email']?.toString() ?? ''
+      'qr_scanner_email': locationData['qr_scanner_email']?.toString() ?? '',
     });
   }
+
+  // --- Settings ---
+  static Future<Map<String, dynamic>> getSettings() async {
+    return request('getSettings');
+  }
 }
+

@@ -999,7 +999,7 @@ function getSettingsMap() {
     map[data[i][0]] = val === undefined || val === null ? '' : val.toString();
   }
   try {
-    CacheService.getScriptCache().put('settings_map_v2', JSON.stringify(map), 21600); // 6 hours
+    CacheService.getScriptCache().put('settings_map_v2', JSON.stringify(map), 120); // 2 minutes TTL
   } catch (_) {}
   return map;
 }

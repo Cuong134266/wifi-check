@@ -17,6 +17,16 @@ void main() {
       expect(matchResult['verified'], isTrue);
       expect(matchResult['public_ip'], equals('14.161.22.45'));
 
+      // Test IP with space inside and newlines in settings
+      final messySettings = {
+        'office_public_ip': "113.185.40.104, 113.185.41.1 98,\n113.185.45.22",
+      };
+      final messyResult = await PublicIpService.verify(
+        messySettings,
+        knownIp: '113.185.41.198',
+      );
+      expect(messyResult['verified'], isTrue);
+
       // Test non-matching known IP
       final nonMatchResult = await PublicIpService.verify(
         settings,
