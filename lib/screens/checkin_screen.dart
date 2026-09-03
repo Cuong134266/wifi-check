@@ -100,11 +100,10 @@ class _CheckinScreenState extends State<CheckinScreen>
         });
     });
 
-    // Tự động kiểm tra lại mạng mỗi 5 giây
-    _wifiTimer = Timer.periodic(const Duration(seconds: 5), (timer) {
+    // Tự động kiểm tra lại mạng mỗi 30 giây (tiết kiệm tài nguyên và pin)
+    _wifiTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (mounted && !_isCheckedIn) {
         _checkNetwork();
-        // Gọi checkLocation trên Web để tự động hiển thị popup hỏi quyền theo yêu cầu
         _checkLocation();
       }
     });
@@ -384,27 +383,18 @@ class _CheckinScreenState extends State<CheckinScreen>
     try {
       if (!await _ensureLoggedIn()) return false;
 
-      // Re-sync settings từ server để đảm bảo có cấu hình GPS/QR mới nhất
-      if (_user != null) {
-        try {
-          final freshResult = await ApiService.loginAndSync(
-            _user!['email'], _user!['name'] ?? '', _user!['avatar'] ?? '', _deviceInfo,
-          );
-          if (freshResult['success'] == true) {
-            final freshSettings = (freshResult['settings'] ?? {}) as Map<String, dynamic>;
-            _settings = freshSettings;
-            _saveUser(_user!, freshSettings);
-          }
-        } catch (_) {} // Nếu lỗi mạng thì dùng settings cũ
+      // Đảm bảo device info đã sẵn sàng
+      if (_deviceInfo.isEmpty) {
+        _deviceInfo = await DeviceService.getInfo();
       }
 
-      // GPS đã được lấy trước trong _performCheckinWithLocation, chỉ dùng kết quả từ state
-      // Lấy Public IP tươi nhất
-      final freshIp = await PublicIpService.getPublicIp(forceRefresh: true);
-      _publicIp = freshIp;
+      // Đảm bảo có Public IP (từ cache 0ms hoặc fetch nhanh)
+      if (_publicIp.isEmpty) {
+        _publicIp = await PublicIpService.getPublicIp();
+      }
 
-      // GATE 1: Kiểm tra Public IP khớp với công ty
-      final ipResult = {'verified': true, 'skipped': true};
+      // GATE 1: Kiểm tra Public IP khớp với công ty (0ms network vì đã có knownIp)
+      final ipResult = await PublicIpService.verify(_settings, knownIp: _publicIp);
       if (ipResult['verified'] != true && ipResult['skipped'] != true) {
         _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
         return false;
@@ -414,11 +404,6 @@ class _CheckinScreenState extends State<CheckinScreen>
       if (!_isLocationValid) {
         _showErrorPopup('Bạn phải ở trong phạm vi công ty (bán kính 2km) và cấp quyền Vị trí để điểm danh.');
         return false;
-      }
-
-      // Đảm bảo device info đã sẵn sàng
-      if (_deviceInfo.isEmpty) {
-        _deviceInfo = await DeviceService.getInfo();
       }
 
       // Xác định phương thức checkin
@@ -469,24 +454,18 @@ class _CheckinScreenState extends State<CheckinScreen>
   Future<bool> _performCheckinWithLocation(
     Future<Map<String, dynamic>> locationFuture,
   ) async {
-    // Chạy song song: Network check và chờ GPS (GPS đã được khởi động từ gesture handler rồi)
-    final results = await Future.wait([
-      _checkNetwork().then((_) => null),
-      locationFuture,
-    ]);
-
-    if (!mounted) return false;
-
     if (_isCheckedIn) return true;
 
-    // Áp dụng kết quả GPS vào state
-    final locInfo = results[1] as Map<String, dynamic>;
-    if (locInfo['available'] == true) {
+    // Nếu location trong state chưa có hoặc chưa hợp lệ, đợi locationFuture
+    if (!_isLocationValid || _locationInfo.isEmpty) {
+      final locInfo = await locationFuture;
+      if (!mounted) return false;
       _locationInfo = locInfo;
-      _isLocationValid = locInfo['in_range'] == true;
-    } else {
-      _locationInfo = locInfo;
-      _isLocationValid = false;
+      _isLocationValid = locInfo['available'] == true && locInfo['in_range'] == true;
+    }
+
+    if (_publicIp.isEmpty) {
+      _publicIp = await PublicIpService.getPublicIp();
     }
 
     return _performCheckin();
@@ -660,12 +639,16 @@ class _CheckinScreenState extends State<CheckinScreen>
   Future<bool> _performQrCheckin(String rawQr) async {
     if (_user == null) throw Exception('Bạn cần đăng nhập trước.');
 
-    final locInfo = await LocationService.getInfo(_settings);
+    final locInfo = (_isLocationValid && _locationInfo.isNotEmpty)
+        ? _locationInfo
+        : await LocationService.getInfo(_settings);
     if (locInfo['available'] != true || locInfo['in_range'] != true) {
       throw Exception('Bạn phải ở trong phạm vi công ty và cấp quyền vị trí để quét QR.');
     }
 
-    final publicIp = await PublicIpService.getPublicIp(forceRefresh: true);
+    final publicIp = _publicIp.isNotEmpty
+        ? _publicIp
+        : await PublicIpService.getPublicIp();
     final result = await QrCheckinService.checkinByQr(
       email: _user!['email'],
       qrPayload: rawQr,

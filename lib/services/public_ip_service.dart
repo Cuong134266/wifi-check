@@ -2,53 +2,77 @@ import 'package:http/http.dart' as http;
 
 class PublicIpService {
   static String _cachedIp = '';
+  static DateTime? _lastFetchTime;
+  static const Duration _cacheTtl = Duration(minutes: 2);
 
-  /// Lấy Public IP của thiết bị từ api.ipify.org
-  /// Trả về chuỗi IP (ví dụ: "14.161.22.45") hoặc rỗng nếu lỗi
+  /// Lấy Public IP của thiết bị từ api.ipify.org (với fallback sang icanhazip)
+  /// Có bộ nhớ đệm TTL 2 phút để tránh lãng phí mạng
   static Future<String> getPublicIp({bool forceRefresh = false}) async {
-    if (_cachedIp.isNotEmpty && !forceRefresh) return _cachedIp;
+    final now = DateTime.now();
+    if (_cachedIp.isNotEmpty &&
+        !forceRefresh &&
+        _lastFetchTime != null &&
+        now.difference(_lastFetchTime!) < _cacheTtl) {
+      return _cachedIp;
+    }
+
+    // Nếu vừa mới lấy trong vòng 10 giây thì dùng lại kể cả forceRefresh để tránh spam
+    if (_cachedIp.isNotEmpty &&
+        _lastFetchTime != null &&
+        now.difference(_lastFetchTime!) < const Duration(seconds: 10)) {
+      return _cachedIp;
+    }
 
     try {
       final response = await http.get(
         Uri.parse('https://api.ipify.org'),
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 3));
       
       if (response.statusCode == 200) {
         _cachedIp = response.body.trim();
+        _lastFetchTime = DateTime.now();
         return _cachedIp;
       }
     } catch (_) {}
 
-    // Fallback: thử nguồn khác nếu ipify bị chặn
+    // Fallback: thử nguồn khác nếu ipify bị chặn hoặc timeout
     try {
       final response = await http.get(
         Uri.parse('https://icanhazip.com'),
-      ).timeout(const Duration(seconds: 5));
+      ).timeout(const Duration(seconds: 3));
 
       if (response.statusCode == 200) {
         _cachedIp = response.body.trim();
+        _lastFetchTime = DateTime.now();
         return _cachedIp;
       }
     } catch (_) {}
 
-    return '';
+    return _cachedIp; // Nếu lỗi mạng, trả về cache trước đó thay vì rỗng
   }
 
-  /// So sánh Public IP hiện tại với IP công ty trong settings
-  static Future<Map<String, dynamic>> verify(Map<String, dynamic> settings) async {
+  /// So sánh Public IP với IP công ty trong settings
+  /// Hỗ trợ truyền `knownIp` sẵn có để không phải gọi mạng lại
+  static Future<Map<String, dynamic>> verify(
+    Map<String, dynamic> settings, {
+    String? knownIp,
+    bool forceRefresh = false,
+  }) async {
     final officeIp = (settings['office_public_ip'] ?? '').toString().trim();
     
     // Nếu chưa cấu hình office_public_ip → bỏ qua check, cho qua
     if (officeIp.isEmpty) {
       return {
         'verified': true,
-        'public_ip': _cachedIp,
+        'public_ip': knownIp ?? _cachedIp,
         'reason': 'Chưa cấu hình IP công ty',
         'skipped': true,
       };
     }
 
-    final currentIp = await getPublicIp(forceRefresh: true);
+    final currentIp = (knownIp != null && knownIp.isNotEmpty)
+        ? knownIp
+        : await getPublicIp(forceRefresh: forceRefresh);
     
     if (currentIp.isEmpty) {
       return {
@@ -58,7 +82,11 @@ class PublicIpService {
       };
     }
 
-    final validIps = officeIp.split(',').map((e) => e.trim()).where((e) => e.isNotEmpty).toList();
+    final validIps = officeIp
+        .split(',')
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
     final matched = validIps.contains(currentIp);
     return {
       'verified': matched,

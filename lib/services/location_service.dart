@@ -7,13 +7,14 @@ class LocationService {
   static const double defaultOfficeLng = 105.8071089;
   static const double defaultRadiusMeters = 2000; // Bán kính cho phép (2km)
 
+  static Map<String, dynamic>? _cachedLocation;
+  static DateTime? _lastLocationTime;
+  static const Duration _locationCacheTtl = Duration(minutes: 2);
+
   /// Kiểm tra & xin quyền location
   static Future<bool> ensurePermission() async {
     try {
       if (kIsWeb) {
-        // Trên nền tảng Web (đặc biệt Safari), việc gọi checkPermission hoặc requestPermission 
-        // sẽ làm đứt mạch User Gesture (do await Promise bất đồng bộ).
-        // Tốt nhất là return true để getCurrentPosition gọi thẳng native browser prompt!
         return true;
       }
 
@@ -29,22 +30,32 @@ class LocationService {
 
       return true;
     } catch (e) {
-      // Bỏ qua lỗi permission API trên Safari web mượn tạm quyền luôn
       if (kIsWeb) return true;
       return false;
     }
   }
 
-  /// Lấy vị trí hiện tại
+  /// Lấy vị trí hiện tại nhanh
   static Future<Position?> getCurrentPosition() async {
     try {
       final hasPermission = await ensurePermission();
       if (!hasPermission) return null;
 
+      // Thử lấy vị trí đã biết gần nhất (đáp ứng 0ms trên Android/iOS)
+      if (!kIsWeb) {
+        try {
+          final lastKnown = await Geolocator.getLastKnownPosition();
+          if (lastKnown != null &&
+              DateTime.now().difference(lastKnown.timestamp) < const Duration(minutes: 3)) {
+            return lastKnown;
+          }
+        } catch (_) {}
+      }
+
       return await Geolocator.getCurrentPosition(
         locationSettings: const LocationSettings(
-          accuracy: LocationAccuracy.best,
-          timeLimit: Duration(seconds: 15),
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 5),
         ),
       );
     } catch (_) {
@@ -67,10 +78,19 @@ class LocationService {
   static double debugLatOffset = 0.0000;
   static double debugLngOffset = 0.0000;
 
-  /// Lấy thông tin location đầy đủ cho check-in
+  /// Lấy thông tin location đầy đủ cho check-in (có cache 2 phút để đạt tốc độ 0ms)
   static Future<Map<String, dynamic>> getInfo([
     Map<String, dynamic>? settings,
+    bool forceRefresh = false,
   ]) async {
+    final now = DateTime.now();
+    if (!forceRefresh &&
+        _cachedLocation != null &&
+        _lastLocationTime != null &&
+        now.difference(_lastLocationTime!) < _locationCacheTtl) {
+      return _cachedLocation!;
+    }
+
     try {
       final officeLat =
           double.tryParse(settings?['office_lat']?.toString() ?? '') ?? defaultOfficeLat;
@@ -81,11 +101,10 @@ class LocationService {
           defaultRadiusMeters;
 
       if (debugFakeLocation) {
-        await Future.delayed(const Duration(milliseconds: 500));
         final currentLat = officeLat + debugLatOffset;
         final currentLng = officeLng + debugLngOffset;
         final distance = distanceTo(currentLat, currentLng, officeLat, officeLng);
-        return {
+        final result = {
           'available': true,
           'latitude': currentLat,
           'longitude': currentLng,
@@ -95,21 +114,18 @@ class LocationService {
           'in_range': distance <= radius,
           'is_fake': true,
         };
+        _cachedLocation = result;
+        _lastLocationTime = DateTime.now();
+        return result;
       }
 
-      // ═══════════════════════════════════════════════════════════
-      // WEB SAFARI/CHROME GESTURE FIX:
-      // Trên Web, getCurrentPosition() PHẢI là lệnh await ĐẦU TIÊN
-      // trong hàm async này. Bất kỳ await nào trước nó (kể cả
-      // ensurePermission() hay Future.delayed()) sẽ làm trình duyệt
-      // mất "User Gesture Token" → không bao giờ hiện popup xin quyền!
-      // ═══════════════════════════════════════════════════════════
+      // Web flow
       if (kIsWeb) {
         try {
-          final Position? position = await Geolocator.getCurrentPosition(
+          final position = await Geolocator.getCurrentPosition(
             locationSettings: const LocationSettings(
-              accuracy: LocationAccuracy.best,
-              timeLimit: Duration(seconds: 15),
+              accuracy: LocationAccuracy.high,
+              timeLimit: Duration(seconds: 5),
             ),
           );
           if (position == null) {
@@ -120,7 +136,7 @@ class LocationService {
             };
           }
           final distance = distanceTo(position.latitude, position.longitude, officeLat, officeLng);
-          return {
+          final result = {
             'available': true,
             'permission_denied': false,
             'latitude': position.latitude,
@@ -130,8 +146,10 @@ class LocationService {
             'radius': radius,
             'in_range': distance <= radius,
           };
+          _cachedLocation = result;
+          _lastLocationTime = DateTime.now();
+          return result;
         } catch (e) {
-          // Lỗi GeolocationPositionError code 1 = PERMISSION_DENIED
           final errStr = e.toString().toLowerCase();
           final isDenied = errStr.contains('permission') ||
               errStr.contains('denied') ||
@@ -146,7 +164,7 @@ class LocationService {
         }
       }
 
-      // --- Native (Android / iOS app) flow ---
+      // Native flow
       final hasPermission = await ensurePermission();
       if (!hasPermission) {
         return {
@@ -168,7 +186,7 @@ class LocationService {
       );
       final isInRange = distance <= radius;
 
-      return {
+      final result = {
         'available': true,
         'latitude': position.latitude,
         'longitude': position.longitude,
@@ -177,6 +195,9 @@ class LocationService {
         'radius': radius,
         'in_range': isInRange,
       };
+      _cachedLocation = result;
+      _lastLocationTime = DateTime.now();
+      return result;
     } catch (e) {
       return {'available': false, 'error': e.toString()};
     }
