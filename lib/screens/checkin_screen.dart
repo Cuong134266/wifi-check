@@ -277,6 +277,25 @@ class _CheckinScreenState extends State<CheckinScreen>
       _isWifiValid = true;
     });
   }
+
+  bool get _isCurrentIpMatched {
+    if (_publicIp.isEmpty) return false;
+    final officeIp = (_settings['office_public_ip'] ?? '').toString().trim();
+    if (officeIp.isEmpty) return false;
+    final cleanCurrentIp = _publicIp.trim().replaceAll(RegExp(r'\s+'), '');
+    final validIps = officeIp
+        .split(RegExp(r'[,;\n\r]+'))
+        .map((e) => e.replaceAll(RegExp(r'\s+'), '').trim())
+        .where((e) => e.isNotEmpty)
+        .toList();
+    return validIps.any((ipPattern) {
+      if (ipPattern.endsWith('*')) {
+        final prefix = ipPattern.substring(0, ipPattern.length - 1);
+        return cleanCurrentIp.startsWith(prefix);
+      }
+      return ipPattern == cleanCurrentIp;
+    });
+  }
   /// Xử lý GoogleSignInAccount sau khi đăng nhập thành công (dùng chung native + web)
   Future<bool> _handleGoogleAccount(GoogleSignInAccount account) async {
     try {
@@ -1706,6 +1725,9 @@ class _CheckinScreenState extends State<CheckinScreen>
           _QuickActionButton(
             icon: Icons.router_rounded,
             label: 'Admin IP',
+            statusDotColor: _isCurrentIpMatched
+                ? const Color(0xFF10B981) // Xanh lá: IP hợp lệ
+                : const Color(0xFFEF4444), // Đỏ: IP chưa có trong công ty
             onTap: _showAdminIpSyncDialog,
           ),
         ],
@@ -1727,11 +1749,13 @@ class _QuickActionButton extends StatelessWidget {
   final IconData icon;
   final String label;
   final VoidCallback onTap;
+  final Color? statusDotColor;
 
   const _QuickActionButton({
     required this.icon,
     required this.label,
     required this.onTap,
+    this.statusDotColor,
   });
 
   @override
@@ -1754,19 +1778,46 @@ class _QuickActionButton extends StatelessWidget {
             ),
           ],
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        child: Stack(
+          clipBehavior: Clip.none,
+          alignment: Alignment.center,
           children: [
-            Icon(icon, size: 20, color: const Color(0xFF111827)),
-            const SizedBox(height: 5),
-            Text(
-              label,
-              style: const TextStyle(
-                fontSize: 12,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF374151),
-              ),
+            Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(icon, size: 20, color: const Color(0xFF111827)),
+                const SizedBox(height: 5),
+                Text(
+                  label,
+                  style: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                    color: Color(0xFF374151),
+                  ),
+                ),
+              ],
             ),
+            if (statusDotColor != null)
+              Positioned(
+                top: -2,
+                right: 4,
+                child: Container(
+                  width: 9,
+                  height: 9,
+                  decoration: BoxDecoration(
+                    color: statusDotColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 1.5),
+                    boxShadow: [
+                      BoxShadow(
+                        color: statusDotColor!.withOpacity(0.45),
+                        blurRadius: 4,
+                        spreadRadius: 1,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
           ],
         ),
       ),
