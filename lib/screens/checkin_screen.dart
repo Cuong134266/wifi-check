@@ -408,10 +408,18 @@ class _CheckinScreenState extends State<CheckinScreen>
         _publicIp = await PublicIpService.getPublicIp();
       }
 
-      // GATE 1: Kiểm tra Public IP khớp với công ty (0ms network vì đã có knownIp)
+      // GATE 1: Kiểm tra GPS trong bán kính công ty (phải có vị trí hợp lệ trước)
+      if (!_isLocationValid) {
+        _showErrorPopup('Bạn phải ở trong phạm vi công ty (bán kính 2km) và cấp quyền Vị trí để điểm danh.');
+        return false;
+      }
+
+      final bool isAdmin = _user?['role'] == 'admin';
+
+      // GATE 2: Kiểm tra Public IP khớp với công ty (0ms network vì đã có knownIp)
       var ipResult = await PublicIpService.verify(_settings, knownIp: _publicIp);
       if (ipResult['verified'] != true && ipResult['skipped'] != true) {
-        // Fallback: Nếu cache settings cũ chưa có IP mới từ Google Sheet, fetch settings mới nhất để thử lại
+        // Fallback 1: Nếu cache settings cũ chưa có IP mới từ Google Sheet, fetch settings mới nhất để thử lại
         try {
           final freshSettingsRes = await ApiService.getSettings();
           if (freshSettingsRes['success'] == true && freshSettingsRes['settings'] is Map) {
@@ -423,14 +431,36 @@ class _CheckinScreenState extends State<CheckinScreen>
         } catch (_) {}
       }
 
-      if (ipResult['verified'] != true && ipResult['skipped'] != true) {
-        _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
-        return false;
+      // Fallback 2: Nếu IP không khớp nhưng là ADMIN và GPS đang ở văn phòng -> TỰ ĐỘNG CẬP NHẬT IP CÔNG TY!
+      if (ipResult['verified'] != true && ipResult['skipped'] != true && isAdmin && _publicIp.isNotEmpty) {
+        try {
+          final updateRes = await ApiService.updateOfficeIp(
+            adminEmail: _user!['email'],
+            newIp: _publicIp,
+            latitude: _locationInfo['latitude'] is num ? (_locationInfo['latitude'] as num).toDouble() : null,
+            longitude: _locationInfo['longitude'] is num ? (_locationInfo['longitude'] as num).toDouble() : null,
+          );
+          if (updateRes['success'] == true) {
+            _settings['office_public_ip'] = _publicIp;
+            final prefs = await SharedPreferences.getInstance();
+            await prefs.setString('cached_settings', jsonEncode(_settings));
+            ipResult = {'verified': true, 'public_ip': _publicIp};
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  backgroundColor: const Color(0xFF10B981),
+                  behavior: SnackBarBehavior.floating,
+                  content: Text('⚡ Admin Auto-Update: Đã cập nhật IP văn phòng mới ($_publicIp) cho toàn bộ nhân viên!'),
+                  duration: const Duration(seconds: 4),
+                ),
+              );
+            }
+          }
+        } catch (_) {}
       }
 
-      // GATE 2: Kiểm tra GPS trong bán kính công ty
-      if (!_isLocationValid) {
-        _showErrorPopup('Bạn phải ở trong phạm vi công ty (bán kính 2km) và cấp quyền Vị trí để điểm danh.');
+      if (ipResult['verified'] != true && ipResult['skipped'] != true) {
+        _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
         return false;
       }
 
@@ -452,6 +482,15 @@ class _CheckinScreenState extends State<CheckinScreen>
         _isCheckedIn = true;
         _wifiStatusText = 'Đã hoàn tất điểm danh';
         _wifiSubText = res['checkin']?['message'] ?? 'Bạn đã ghi nhận hôm nay.';
+        if (res['auto_updated_ip'] == true && mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              backgroundColor: const Color(0xFF10B981),
+              behavior: SnackBarBehavior.floating,
+              content: Text('⚡ Đã tự động cập nhật IP văn phòng mới: ${res['new_ip'] ?? _publicIp}'),
+            ),
+          );
+        }
         _loadHistoryBg();
         _loadRankingBg();
         return true;
@@ -1023,6 +1062,254 @@ class _CheckinScreenState extends State<CheckinScreen>
     }
   }
 
+  void _showAdminIpSyncDialog() {
+    if (_user == null || _user!['role'] != 'admin') return;
+
+    final currentOfficeIp = (_settings['office_public_ip'] ?? '').toString().trim();
+    bool isSyncing = false;
+
+    showGeneralDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'AdminIpSync',
+      barrierColor: Colors.black.withOpacity(0.5),
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (ctx, anim, anim2) {
+        return StatefulBuilder(
+          builder: (dialogContext, setDialogState) {
+            return Center(
+              child: Container(
+                width: math.min(MediaQuery.of(context).size.width - 40, 420),
+                padding: const EdgeInsets.all(24),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(24),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.15),
+                      blurRadius: 30,
+                      offset: const Offset(0, 10),
+                    ),
+                  ],
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFEFF6FF),
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            child: const Icon(
+                              Icons.router_rounded,
+                              color: Color(0xFF2563EB),
+                              size: 24,
+                            ),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  'Cập nhật IP mạng văn phòng',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w700,
+                                    color: Color(0xFF111827),
+                                  ),
+                                ),
+                                SizedBox(height: 2),
+                                Text(
+                                  'Quyền Quản trị viên (Admin)',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF6B7280),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 20, color: Color(0xFF9CA3AF)),
+                            onPressed: () => Navigator.of(ctx).pop(),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Box 1: IP hiện tại của thiết bị
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'IP mạng hiện tại của thiết bị:',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                            ),
+                            const SizedBox(height: 4),
+                            SelectableText(
+                              _publicIp.isNotEmpty ? _publicIp : 'Đang phát hiện...',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w700,
+                                color: Color(0xFF111827),
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 10),
+
+                      // Box 2: IP đang lưu trên Sheet
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(14),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFF9FAFB),
+                          borderRadius: BorderRadius.circular(14),
+                          border: Border.all(color: const Color(0xFFE5E7EB)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'IP công ty đang lưu trong Settings:',
+                              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                            ),
+                            const SizedBox(height: 4),
+                            SelectableText(
+                              currentOfficeIp.isNotEmpty ? currentOfficeIp : '(Chưa cấu hình)',
+                              style: const TextStyle(
+                                fontSize: 13,
+                                fontWeight: FontWeight.w600,
+                                color: Color(0xFF4B5563),
+                                fontFamily: 'monospace',
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 14),
+
+                      // Trạng thái GPS
+                      Row(
+                        children: [
+                          Icon(
+                            _isLocationValid ? Icons.check_circle_rounded : Icons.warning_rounded,
+                            size: 16,
+                            color: _isLocationValid ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                          ),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              _isLocationValid
+                                  ? 'Đang ở văn phòng (${_locationInfo['distance'] ?? 0}m) - Đủ điều kiện đồng bộ'
+                                  : 'Vị trí chưa ở văn phòng (${_locationInfo['distance'] ?? 0}m). Cần ở công ty để đồng bộ.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: _isLocationValid ? const Color(0xFF059669) : const Color(0xFFD97706),
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Nút hành động
+                      SizedBox(
+                        width: double.infinity,
+                        height: 46,
+                        child: ElevatedButton(
+                          onPressed: (isSyncing || _publicIp.isEmpty || !_isLocationValid)
+                              ? null
+                              : () async {
+                                  setDialogState(() => isSyncing = true);
+                                  try {
+                                    final res = await ApiService.updateOfficeIp(
+                                      adminEmail: _user!['email'],
+                                      newIp: _publicIp,
+                                      latitude: _locationInfo['latitude'] is num ? (_locationInfo['latitude'] as num).toDouble() : null,
+                                      longitude: _locationInfo['longitude'] is num ? (_locationInfo['longitude'] as num).toDouble() : null,
+                                    );
+                                    if (res['success'] == true) {
+                                      _settings['office_public_ip'] = _publicIp;
+                                      final prefs = await SharedPreferences.getInstance();
+                                      await prefs.setString('cached_settings', jsonEncode(_settings));
+                                      if (mounted) {
+                                        setState(() {});
+                                        Navigator.of(ctx).pop();
+                                        ScaffoldMessenger.of(context).showSnackBar(
+                                          SnackBar(
+                                            backgroundColor: const Color(0xFF10B981),
+                                            behavior: SnackBarBehavior.floating,
+                                            content: Text('🎉 Đã cập nhật IP văn phòng thành: $_publicIp'),
+                                          ),
+                                        );
+                                      }
+                                    } else {
+                                      throw Exception(res['error'] ?? 'Cập nhật thất bại');
+                                    }
+                                  } catch (err) {
+                                    setDialogState(() => isSyncing = false);
+                                    if (mounted) {
+                                      ScaffoldMessenger.of(context).showSnackBar(
+                                        SnackBar(
+                                          backgroundColor: Colors.redAccent,
+                                          behavior: SnackBarBehavior.floating,
+                                          content: Text('Lỗi: $err'),
+                                        ),
+                                      );
+                                    }
+                                  }
+                                },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: const Color(0xFF2563EB),
+                            foregroundColor: Colors.white,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14),
+                            ),
+                            elevation: 0,
+                            disabledBackgroundColor: const Color(0xFFE5E7EB),
+                          ),
+                          child: isSyncing
+                              ? const SizedBox(
+                                  width: 20,
+                                  height: 20,
+                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                )
+                              : const Text(
+                                  'Cập nhật IP này cho toàn công ty',
+                                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                                ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -1117,6 +1404,50 @@ class _CheckinScreenState extends State<CheckinScreen>
               ),
             ),
           ),
+          if (_user != null && _user!['role'] == 'admin') ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: _showAdminIpSyncDialog,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(40),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.08),
+                      blurRadius: 20,
+                      spreadRadius: 1,
+                      offset: const Offset(0, 6),
+                    ),
+                  ],
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: BoxDecoration(
+                        color: _isLocationValid ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                    const SizedBox(width: 6),
+                    const Text(
+                      'Admin IP',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: Color(0xFF2563EB),
+                        fontFamily: 'Inter',
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
         ],
       ),
     );

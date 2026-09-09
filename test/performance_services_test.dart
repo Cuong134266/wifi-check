@@ -42,6 +42,26 @@ void main() {
       expect(result['verified'], isTrue);
       expect(result['skipped'], isTrue);
     });
+
+    test('verify supports wildcard and prefix IP matching', () async {
+      final settings = {
+        'office_public_ip': '113.185.*, 14.161.22.*',
+      };
+
+      // Test wildcard matching
+      final match1 = await PublicIpService.verify(settings, knownIp: '113.185.40.104');
+      expect(match1['verified'], isTrue);
+
+      final match2 = await PublicIpService.verify(settings, knownIp: '113.185.99.1');
+      expect(match2['verified'], isTrue);
+
+      final match3 = await PublicIpService.verify(settings, knownIp: '14.161.22.88');
+      expect(match3['verified'], isTrue);
+
+      // Test non-matching IP with wildcard
+      final nonMatch = await PublicIpService.verify(settings, knownIp: '14.161.23.88');
+      expect(nonMatch['verified'], isFalse);
+    });
   });
 
   group('CoordinateUtils Tests', () {

@@ -133,5 +133,21 @@ class ApiService {
   static Future<Map<String, dynamic>> getSettings() async {
     return request('getSettings');
   }
+
+  // --- Admin: Update Office Public IP ---
+  static Future<Map<String, dynamic>> updateOfficeIp({
+    required String adminEmail,
+    required String newIp,
+    double? latitude,
+    double? longitude,
+  }) async {
+    final Map<String, dynamic> data = {
+      'admin_email': adminEmail,
+      'new_ip': newIp,
+    };
+    if (latitude != null) data['latitude'] = latitude.toString();
+    if (longitude != null) data['longitude'] = longitude.toString();
+    return request('updateOfficeIp', data);
+  }
 }
 

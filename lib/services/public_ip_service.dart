@@ -88,7 +88,13 @@ class PublicIpService {
         .map((e) => e.replaceAll(RegExp(r'\s+'), '').trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    final matched = validIps.contains(cleanCurrentIp);
+    final matched = validIps.any((ipPattern) {
+      if (ipPattern.endsWith('*')) {
+        final prefix = ipPattern.substring(0, ipPattern.length - 1);
+        return cleanCurrentIp.startsWith(prefix);
+      }
+      return ipPattern == cleanCurrentIp;
+    });
     return {
       'verified': matched,
       'public_ip': currentIp,
