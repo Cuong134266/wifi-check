@@ -1,8 +1,9 @@
-﻿import 'dart:convert';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../services/api_service.dart';
+import '../services/public_ip_service.dart';
 
 class AdminIpSheet extends StatefulWidget {
   final Map<String, dynamic> user;
@@ -30,11 +31,28 @@ class _AdminIpSheetState extends State<AdminIpSheet> {
   bool _isSyncing = false;
   String? _error;
   late String _officeIps;
+  final Map<String, String> _resolvedDdns = {};
 
   @override
   void initState() {
     super.initState();
     _officeIps = (widget.settings['office_public_ip'] ?? '').toString().trim();
+    _resolveDdnsItems();
+  }
+
+  void _resolveDdnsItems() {
+    final list = _savedIpList;
+    for (final item in list) {
+      if (RegExp(r'[a-zA-Z]').hasMatch(item)) {
+        PublicIpService.resolveDdns(item).then((resolved) {
+          if (resolved != null && mounted) {
+            setState(() {
+              _resolvedDdns[item] = resolved;
+            });
+          }
+        });
+      }
+    }
   }
 
   bool _isIpMatched(String targetIp) {
@@ -45,12 +63,17 @@ class _AdminIpSheetState extends State<AdminIpSheet> {
         .map((e) => e.replaceAll(RegExp(r'\s+'), '').trim())
         .where((e) => e.isNotEmpty)
         .toList();
-    return validList.any((pattern) {
+    for (final pattern in validList) {
       if (pattern.endsWith('*')) {
-        return clean.startsWith(pattern.substring(0, pattern.length - 1));
+        if (clean.startsWith(pattern.substring(0, pattern.length - 1))) return true;
       }
-      return pattern == clean;
-    });
+      if (pattern == clean) return true;
+      // Khớp qua No-IP DDNS đã phân giải
+      if (_resolvedDdns.containsKey(pattern) && _resolvedDdns[pattern] == clean) {
+        return true;
+      }
+    }
+    return false;
   }
 
   List<String> get _savedIpList {
@@ -310,7 +333,9 @@ class _AdminIpSheetState extends State<AdminIpSheet> {
                   )
                 else
                   ...savedIps.map((ip) {
-                    final isThisOne = (ip == widget.publicIp);
+                    final isDdns = RegExp(r'[a-zA-Z]').hasMatch(ip);
+                    final resolved = _resolvedDdns[ip];
+                    final isThisOne = (ip == widget.publicIp) || (resolved != null && resolved == widget.publicIp);
                     return Container(
                       margin: const EdgeInsets.only(bottom: 8),
                       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
@@ -325,20 +350,37 @@ class _AdminIpSheetState extends State<AdminIpSheet> {
                       child: Row(
                         children: [
                           Icon(
-                            Icons.router_rounded,
+                            isDdns ? Icons.dns_rounded : Icons.router_rounded,
                             size: 20,
                             color: isThisOne ? const Color(0xFF10B981) : const Color(0xFF6B7280),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
-                            child: Text(
-                              ip,
-                              style: TextStyle(
-                                fontFamily: 'monospace',
-                                fontWeight: FontWeight.w700,
-                                fontSize: 14,
-                                color: isThisOne ? const Color(0xFF047857) : const Color(0xFF1F2937),
-                              ),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  ip,
+                                  style: TextStyle(
+                                    fontFamily: 'monospace',
+                                    fontWeight: FontWeight.w700,
+                                    fontSize: 14,
+                                    color: isThisOne ? const Color(0xFF047857) : const Color(0xFF1F2937),
+                                  ),
+                                ),
+                                if (isDdns && resolved != null)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 2),
+                                    child: Text(
+                                      'Trỏ về IP: $resolved',
+                                      style: const TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF6B7280),
+                                        fontFamily: 'monospace',
+                                      ),
+                                    ),
+                                  ),
+                              ],
                             ),
                           ),
                           if (isThisOne)
