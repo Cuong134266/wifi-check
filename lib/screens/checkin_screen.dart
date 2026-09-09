@@ -408,13 +408,14 @@ class _CheckinScreenState extends State<CheckinScreen>
         _publicIp = await PublicIpService.getPublicIp();
       }
 
+      final bool isAdmin = _user?['role'] == 'admin';
+
       // GATE 1: Kiểm tra GPS trong bán kính công ty (phải có vị trí hợp lệ trước)
-      if (!_isLocationValid) {
+      // Ngoại lệ: Nếu là Admin, không chặn cứng GPS để Admin có thể kích hoạt đồng bộ IP mới cho công ty
+      if (!_isLocationValid && !isAdmin) {
         _showErrorPopup('Bạn phải ở trong phạm vi công ty (bán kính 2km) và cấp quyền Vị trí để điểm danh.');
         return false;
       }
-
-      final bool isAdmin = _user?['role'] == 'admin';
 
       // GATE 2: Kiểm tra Public IP khớp với công ty (0ms network vì đã có knownIp)
       var ipResult = await PublicIpService.verify(_settings, knownIp: _publicIp);
@@ -431,7 +432,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         } catch (_) {}
       }
 
-      // Fallback 2: Nếu IP không khớp nhưng là ADMIN và GPS đang ở văn phòng -> TỰ ĐỘNG CẬP NHẬT IP CÔNG TY!
+      // Fallback 2: Nếu IP không khớp nhưng là ADMIN -> TỰ ĐỘNG CẬP NHẬT IP CÔNG TY!
       if (ipResult['verified'] != true && ipResult['skipped'] != true && isAdmin && _publicIp.isNotEmpty) {
         try {
           final updateRes = await ApiService.updateOfficeIp(
@@ -1236,7 +1237,7 @@ class _CheckinScreenState extends State<CheckinScreen>
                         width: double.infinity,
                         height: 46,
                         child: ElevatedButton(
-                          onPressed: (isSyncing || _publicIp.isEmpty || !_isLocationValid)
+                          onPressed: (isSyncing || _publicIp.isEmpty)
                               ? null
                               : () async {
                                   setDialogState(() => isSyncing = true);

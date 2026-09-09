@@ -1059,21 +1059,12 @@ function updateOfficeIp(params) {
     .trim()
     .toLowerCase();
   if (!isAdmin(email))
-    return { success: false, error: "Unauthorized: Bạn không có quyền Admin" };
+    return {
+      success: false,
+      error: "Unauthorized: Tài khoản " + email + " không có quyền Admin",
+    };
   const newIp = (params.new_ip || params.public_ip || "").toString().trim();
   if (!newIp) return { success: false, error: "IP mới không hợp lệ" };
-
-  // Nếu có toạ độ gửi kèm, kiểm tra xem Admin có thực sự ở văn phòng không
-  const settings = getSettingsMap();
-  if (params.latitude && params.longitude) {
-    const gpsCheck = _verifyGps(params, settings);
-    if (!gpsCheck.success) {
-      return {
-        success: false,
-        error: "Chỉ có thể cập nhật IP khi Admin đang có mặt tại văn phòng",
-      };
-    }
-  }
 
   _updateSingleSetting("office_public_ip", newIp);
   return {
@@ -1370,10 +1361,18 @@ function getSettingsMap() {
 }
 
 function isAdmin(email) {
-  const employee = _getEmployeeByEmail(
-    (email || "").toString().trim().toLowerCase(),
-  );
-  return !!employee && employee.role === "admin";
+  if (!email) return false;
+  const cleanEmail = (email || "").toString().trim().toLowerCase();
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_EMPLOYEES);
+  if (!sheet) return false;
+  const data = sheet.getDataRange().getValues();
+  for (let i = 1; i < data.length; i++) {
+    if ((data[i][0] || "").toString().trim().toLowerCase() === cleanEmail) {
+      return (data[i][4] || "").toString().trim().toLowerCase() === "admin";
+    }
+  }
+  return false;
 }
 
 function _ensureSheet(name, headers) {
