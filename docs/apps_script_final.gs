@@ -396,7 +396,7 @@ function checkinEmployee(params) {
       .filter(Boolean);
     const cleanPublicIp = publicIpParam.replace(/\s+/g, "");
     if (!validIps.includes(cleanPublicIp)) {
-      _updateSingleSetting("office_public_ip", publicIpParam);
+      _appendOfficeIp(publicIpParam);
       autoUpdatedIp = true;
     }
   }
@@ -1053,6 +1053,52 @@ function _updateSingleSetting(key, value) {
   } catch (_) {}
 }
 
+function _appendOfficeIp(newIp) {
+  initSheets();
+  const cleanNewIp = (newIp || "").toString().trim().replace(/\s+/g, "");
+  if (!cleanNewIp) return "";
+
+  const sheet =
+    SpreadsheetApp.getActiveSpreadsheet().getSheetByName(SHEET_SETTINGS);
+  if (!sheet) return "";
+  const data = sheet.getDataRange().getValues();
+  let foundRow = -1;
+  let currentVal = "";
+
+  for (let i = 1; i < data.length; i++) {
+    if (data[i][0] === "office_public_ip") {
+      foundRow = i + 1;
+      currentVal = (data[i][1] || "").toString().trim();
+      break;
+    }
+  }
+
+  // Tách các IP hiện có thành mảng
+  let ipList = currentVal
+    .split(/[,;\n\r]+/)
+    .map((s) => s.trim().replace(/\s+/g, ""))
+    .filter(Boolean);
+
+  // Nếu IP mới chưa có trong danh sách -> thêm vào cuối
+  if (!ipList.includes(cleanNewIp)) {
+    ipList.push(cleanNewIp);
+  }
+
+  const updatedValue = ipList.join(", ");
+
+  if (foundRow > 0) {
+    sheet.getRange(foundRow, 2).setValue(updatedValue);
+  } else {
+    sheet.appendRow(["office_public_ip", updatedValue]);
+  }
+
+  try {
+    CacheService.getScriptCache().remove("settings_map_v2");
+  } catch (_) {}
+
+  return updatedValue;
+}
+
 function updateOfficeIp(params) {
   const email = (params.admin_email || params.email || "")
     .toString()
@@ -1066,11 +1112,12 @@ function updateOfficeIp(params) {
   const newIp = (params.new_ip || params.public_ip || "").toString().trim();
   if (!newIp) return { success: false, error: "IP mới không hợp lệ" };
 
-  _updateSingleSetting("office_public_ip", newIp);
+  const updatedList = _appendOfficeIp(newIp);
   return {
     success: true,
-    message: "Đã cập nhật IP văn phòng thành công: " + newIp,
+    message: "Đã thêm IP vào danh sách văn phòng: " + newIp,
     new_ip: newIp,
+    all_ips: updatedList,
   };
 }
 

@@ -442,7 +442,13 @@ class _CheckinScreenState extends State<CheckinScreen>
             longitude: _locationInfo['longitude'] is num ? (_locationInfo['longitude'] as num).toDouble() : null,
           );
           if (updateRes['success'] == true) {
-            _settings['office_public_ip'] = _publicIp;
+            final allIps = updateRes['all_ips']?.toString();
+            if (allIps != null && allIps.isNotEmpty) {
+              _settings['office_public_ip'] = allIps;
+            } else {
+              final curr = (_settings['office_public_ip'] ?? '').toString().trim();
+              _settings['office_public_ip'] = curr.isEmpty ? _publicIp : '$curr, $_publicIp';
+            }
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('cached_settings', jsonEncode(_settings));
             ipResult = {'verified': true, 'public_ip': _publicIp};
@@ -451,7 +457,7 @@ class _CheckinScreenState extends State<CheckinScreen>
                 SnackBar(
                   backgroundColor: const Color(0xFF10B981),
                   behavior: SnackBarBehavior.floating,
-                  content: Text('⚡ Admin Auto-Update: Đã cập nhật IP văn phòng mới ($_publicIp) cho toàn bộ nhân viên!'),
+                  content: Text('⚡ Admin Auto-Update: Đã thêm IP văn phòng mới ($_publicIp) vào danh sách công ty!'),
                   duration: const Duration(seconds: 4),
                 ),
               );
@@ -1249,7 +1255,13 @@ class _CheckinScreenState extends State<CheckinScreen>
                                       longitude: _locationInfo['longitude'] is num ? (_locationInfo['longitude'] as num).toDouble() : null,
                                     );
                                     if (res['success'] == true) {
-                                      _settings['office_public_ip'] = _publicIp;
+                                      final allIps = res['all_ips']?.toString();
+                                      if (allIps != null && allIps.isNotEmpty) {
+                                        _settings['office_public_ip'] = allIps;
+                                      } else {
+                                        final curr = (_settings['office_public_ip'] ?? '').toString().trim();
+                                        _settings['office_public_ip'] = curr.isEmpty ? _publicIp : '$curr, $_publicIp';
+                                      }
                                       final prefs = await SharedPreferences.getInstance();
                                       await prefs.setString('cached_settings', jsonEncode(_settings));
                                       if (mounted) {
@@ -1259,12 +1271,12 @@ class _CheckinScreenState extends State<CheckinScreen>
                                           SnackBar(
                                             backgroundColor: const Color(0xFF10B981),
                                             behavior: SnackBarBehavior.floating,
-                                            content: Text('🎉 Đã cập nhật IP văn phòng thành: $_publicIp'),
+                                            content: Text('🎉 Đã thêm IP ($_publicIp) vào danh sách văn phòng!'),
                                           ),
                                         );
                                       }
                                     } else {
-                                      throw Exception(res['error'] ?? 'Cập nhật thất bại');
+                                      throw Exception(res['error'] ?? 'Thêm IP thất bại');
                                     }
                                   } catch (err) {
                                     setDialogState(() => isSyncing = false);
@@ -1295,7 +1307,7 @@ class _CheckinScreenState extends State<CheckinScreen>
                                   child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
                                 )
                               : const Text(
-                                  'Cập nhật IP này cho toàn công ty',
+                                  'Thêm IP này vào danh sách công ty',
                                   style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
                                 ),
                         ),
