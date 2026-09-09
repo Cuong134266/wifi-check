@@ -1100,243 +1100,272 @@ class _CheckinScreenState extends State<CheckinScreen>
       barrierLabel: 'AdminIpSync',
       barrierColor: Colors.black.withOpacity(0.5),
       transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (ctx, anim, anim2) {
-        return StatefulBuilder(
-          builder: (dialogContext, setDialogState) {
-            return Center(
-              child: Container(
-                width: math.min(MediaQuery.of(context).size.width - 40, 420),
-                padding: const EdgeInsets.all(24),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(24),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.15),
-                      blurRadius: 30,
-                      offset: const Offset(0, 10),
-                    ),
-                  ],
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFEFF6FF),
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            child: const Icon(
-                              Icons.router_rounded,
-                              color: Color(0xFF2563EB),
-                              size: 24,
-                            ),
+      pageBuilder: (context, anim1, anim2) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24.0, left: 16, right: 16),
+              child: Material(
+                color: Colors.transparent,
+                child: StatefulBuilder(
+                  builder: (dialogContext, setDialogState) {
+                    final isMatched = _isCurrentIpMatched;
+                    return Container(
+                      width: math.min(MediaQuery.of(context).size.width - 32, 440),
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(24),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.12),
+                            blurRadius: 28,
+                            offset: const Offset(0, 10),
                           ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: const [
-                                Text(
-                                  'Cập nhật IP mạng văn phòng',
+                        ],
+                      ),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          // Header: Tiêu đề + nút đóng (giống hệt LeaveRequestSheet)
+                          Row(
+                            children: [
+                              const Expanded(
+                                child: Text(
+                                  'Cập nhật IP văn phòng',
                                   style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w700,
+                                    fontSize: 20,
+                                    fontWeight: FontWeight.w800,
                                     color: Color(0xFF111827),
                                   ),
                                 ),
-                                SizedBox(height: 2),
-                                Text(
-                                  'Quyền Quản trị viên (Admin)',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF6B7280),
+                              ),
+                              IconButton(
+                                onPressed: () => Navigator.of(context).pop(),
+                                icon: const Icon(Icons.close_rounded, size: 22, color: Color(0xFF6B7280)),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 12),
+
+                          // Box 1: IP hiện tại của thiết bị + badge trạng thái
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        'IP mạng hiện tại của thiết bị:',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Color(0xFF6B7280),
+                                          fontWeight: FontWeight.w500,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 4),
+                                      SelectableText(
+                                        _publicIp.isNotEmpty ? _publicIp : 'Đang phát hiện...',
+                                        style: const TextStyle(
+                                          fontSize: 17,
+                                          fontWeight: FontWeight.w800,
+                                          color: Color(0xFF111827),
+                                          fontFamily: 'monospace',
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  decoration: BoxDecoration(
+                                    color: isMatched ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                      color: isMatched ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                                    ),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Container(
+                                        width: 7,
+                                        height: 7,
+                                        decoration: BoxDecoration(
+                                          color: isMatched ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                          shape: BoxShape.circle,
+                                        ),
+                                      ),
+                                      const SizedBox(width: 5),
+                                      Text(
+                                        isMatched ? 'Đã có' : 'Chưa có',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          fontWeight: FontWeight.w700,
+                                          color: isMatched ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ),
                               ],
                             ),
                           ),
-                          IconButton(
-                            icon: const Icon(Icons.close, size: 20, color: Color(0xFF9CA3AF)),
-                            onPressed: () => Navigator.of(ctx).pop(),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
+                          const SizedBox(height: 10),
 
-                      // Box 1: IP hiện tại của thiết bị
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9FAFB),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'IP mạng hiện tại của thiết bị:',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
+                          // Box 2: Danh sách IP công ty đang lưu trong Settings
+                          Container(
+                            width: double.infinity,
+                            padding: const EdgeInsets.all(14),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFF9FAFB),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: const Color(0xFFE5E7EB)),
                             ),
-                            const SizedBox(height: 4),
-                            SelectableText(
-                              _publicIp.isNotEmpty ? _publicIp : 'Đang phát hiện...',
-                              style: const TextStyle(
-                                fontSize: 16,
-                                fontWeight: FontWeight.w700,
-                                color: Color(0xFF111827),
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 10),
-
-                      // Box 2: IP đang lưu trên Sheet
-                      Container(
-                        width: double.infinity,
-                        padding: const EdgeInsets.all(14),
-                        decoration: BoxDecoration(
-                          color: const Color(0xFFF9FAFB),
-                          borderRadius: BorderRadius.circular(14),
-                          border: Border.all(color: const Color(0xFFE5E7EB)),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            const Text(
-                              'IP công ty đang lưu trong Settings:',
-                              style: TextStyle(fontSize: 12, color: Color(0xFF6B7280)),
-                            ),
-                            const SizedBox(height: 4),
-                            SelectableText(
-                              currentOfficeIp.isNotEmpty ? currentOfficeIp : '(Chưa cấu hình)',
-                              style: const TextStyle(
-                                fontSize: 13,
-                                fontWeight: FontWeight.w600,
-                                color: Color(0xFF4B5563),
-                                fontFamily: 'monospace',
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 14),
-
-                      // Trạng thái GPS
-                      Row(
-                        children: [
-                          Icon(
-                            _isLocationValid ? Icons.check_circle_rounded : Icons.warning_rounded,
-                            size: 16,
-                            color: _isLocationValid ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              _isLocationValid
-                                  ? 'Đang ở văn phòng (${_locationInfo['distance'] ?? 0}m) - Đủ điều kiện đồng bộ'
-                                  : 'Vị trí chưa ở văn phòng (${_locationInfo['distance'] ?? 0}m). Cần ở công ty để đồng bộ.',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: _isLocationValid ? const Color(0xFF059669) : const Color(0xFFD97706),
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 20),
-
-                      // Nút hành động
-                      SizedBox(
-                        width: double.infinity,
-                        height: 46,
-                        child: ElevatedButton(
-                          onPressed: (isSyncing || _publicIp.isEmpty)
-                              ? null
-                              : () async {
-                                  setDialogState(() => isSyncing = true);
-                                  try {
-                                    final res = await ApiService.updateOfficeIp(
-                                      adminEmail: _user!['email'],
-                                      newIp: _publicIp,
-                                      latitude: _locationInfo['latitude'] is num ? (_locationInfo['latitude'] as num).toDouble() : null,
-                                      longitude: _locationInfo['longitude'] is num ? (_locationInfo['longitude'] as num).toDouble() : null,
-                                    );
-                                    if (res['success'] == true) {
-                                      final allIps = res['all_ips']?.toString();
-                                      if (allIps != null && allIps.isNotEmpty) {
-                                        _settings['office_public_ip'] = allIps;
-                                      } else {
-                                        final curr = (_settings['office_public_ip'] ?? '').toString().trim();
-                                        _settings['office_public_ip'] = curr.isEmpty ? _publicIp : '$curr, $_publicIp';
-                                      }
-                                      final prefs = await SharedPreferences.getInstance();
-                                      await prefs.setString('cached_settings', jsonEncode(_settings));
-                                      if (mounted) {
-                                        setState(() {});
-                                        Navigator.of(ctx).pop();
-                                        ScaffoldMessenger.of(context).showSnackBar(
-                                          SnackBar(
-                                            backgroundColor: const Color(0xFF10B981),
-                                            behavior: SnackBarBehavior.floating,
-                                            content: Text('🎉 Đã thêm IP ($_publicIp) vào danh sách văn phòng!'),
-                                          ),
-                                        );
-                                      }
-                                    } else {
-                                      throw Exception(res['error'] ?? 'Thêm IP thất bại');
-                                    }
-                                  } catch (err) {
-                                    setDialogState(() => isSyncing = false);
-                                    if (mounted) {
-                                      ScaffoldMessenger.of(context).showSnackBar(
-                                        SnackBar(
-                                          backgroundColor: Colors.redAccent,
-                                          behavior: SnackBarBehavior.floating,
-                                          content: Text('Lỗi: $err'),
-                                        ),
-                                      );
-                                    }
-                                  }
-                                },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: const Color(0xFF2563EB),
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(14),
-                            ),
-                            elevation: 0,
-                            disabledBackgroundColor: const Color(0xFFE5E7EB),
-                          ),
-                          child: isSyncing
-                              ? const SizedBox(
-                                  width: 20,
-                                  height: 20,
-                                  child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-                                )
-                              : const Text(
-                                  'Thêm IP này vào danh sách công ty',
-                                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  'Danh sách IP công ty đang lưu (Settings):',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: Color(0xFF6B7280),
+                                    fontWeight: FontWeight.w500,
+                                  ),
                                 ),
-                        ),
+                                const SizedBox(height: 5),
+                                SelectableText(
+                                  currentOfficeIp.isNotEmpty ? currentOfficeIp : '(Chưa cấu hình)',
+                                  style: const TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w600,
+                                    color: Color(0xFF374151),
+                                    fontFamily: 'monospace',
+                                    height: 1.4,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 18),
+
+                          // Nút hành động
+                          SizedBox(
+                            width: double.infinity,
+                            height: 48,
+                            child: ElevatedButton(
+                              onPressed: (isSyncing || _publicIp.isEmpty)
+                                  ? null
+                                  : () async {
+                                      setDialogState(() => isSyncing = true);
+                                      try {
+                                        final res = await ApiService.updateOfficeIp(
+                                          adminEmail: _user!['email'],
+                                          newIp: _publicIp,
+                                          latitude: _locationInfo['latitude'] is num
+                                              ? (_locationInfo['latitude'] as num).toDouble()
+                                              : null,
+                                          longitude: _locationInfo['longitude'] is num
+                                              ? (_locationInfo['longitude'] as num).toDouble()
+                                              : null,
+                                        );
+                                        if (res['success'] == true) {
+                                          final allIps = res['all_ips']?.toString();
+                                          if (allIps != null && allIps.isNotEmpty) {
+                                            _settings['office_public_ip'] = allIps;
+                                          } else {
+                                            final curr = (_settings['office_public_ip'] ?? '').toString().trim();
+                                            _settings['office_public_ip'] =
+                                                curr.isEmpty ? _publicIp : '$curr, $_publicIp';
+                                          }
+                                          final prefs = await SharedPreferences.getInstance();
+                                          await prefs.setString('cached_settings', jsonEncode(_settings));
+                                          if (mounted) {
+                                            setState(() {});
+                                            Navigator.of(context).pop();
+                                            ScaffoldMessenger.of(context).showSnackBar(
+                                              SnackBar(
+                                                backgroundColor: const Color(0xFF10B981),
+                                                behavior: SnackBarBehavior.floating,
+                                                content: Text('🎉 Đã thêm IP ($_publicIp) vào danh sách văn phòng!'),
+                                              ),
+                                            );
+                                          }
+                                        } else {
+                                          throw Exception(res['error'] ?? 'Thêm IP thất bại');
+                                        }
+                                      } catch (err) {
+                                        setDialogState(() => isSyncing = false);
+                                        if (mounted) {
+                                          ScaffoldMessenger.of(context).showSnackBar(
+                                            SnackBar(
+                                              backgroundColor: Colors.redAccent,
+                                              behavior: SnackBarBehavior.floating,
+                                              content: Text('Lỗi: $err'),
+                                            ),
+                                          );
+                                        }
+                                      }
+                                    },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF2563EB),
+                                foregroundColor: Colors.white,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(16),
+                                ),
+                                elevation: 0,
+                                disabledBackgroundColor: const Color(0xFFE5E7EB),
+                              ),
+                              child: isSyncing
+                                  ? const SizedBox(
+                                      width: 20,
+                                      height: 20,
+                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                    )
+                                  : Row(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      children: [
+                                        Icon(
+                                          isMatched ? Icons.check_circle_outline_rounded : Icons.add_rounded,
+                                          size: 18,
+                                        ),
+                                        const SizedBox(width: 8),
+                                        Text(
+                                          isMatched
+                                              ? 'IP này đã có (Bấm để đồng bộ lại)'
+                                              : 'Thêm IP này vào danh sách công ty',
+                                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                        ),
+                                      ],
+                                    ),
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    );
+                  },
                 ),
               ),
-            );
-          },
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return SlideTransition(
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          child: FadeTransition(opacity: anim1, child: child),
         );
       },
     );
