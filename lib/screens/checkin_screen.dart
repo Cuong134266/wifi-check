@@ -1417,50 +1417,6 @@ class _CheckinScreenState extends State<CheckinScreen>
               ),
             ),
           ),
-          if (_user != null && _user!['role'] == 'admin') ...[
-            const SizedBox(width: 8),
-            GestureDetector(
-              onTap: _showAdminIpSyncDialog,
-              child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(40),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.08),
-                      blurRadius: 20,
-                      spreadRadius: 1,
-                      offset: const Offset(0, 6),
-                    ),
-                  ],
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Container(
-                      width: 8,
-                      height: 8,
-                      decoration: BoxDecoration(
-                        color: _isLocationValid ? const Color(0xFF10B981) : const Color(0xFFF59E0B),
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                    const SizedBox(width: 6),
-                    const Text(
-                      'Admin IP',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Color(0xFF2563EB),
-                        fontFamily: 'Inter',
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );
@@ -1745,6 +1701,14 @@ class _CheckinScreenState extends State<CheckinScreen>
           label: 'Xin nghỉ',
           onTap: _showLeaveRequestSheet,
         ),
+        if (_user != null && _user!['role'] == 'admin') ...[
+          const SizedBox(width: 10),
+          _QuickActionButton(
+            icon: Icons.router_rounded,
+            label: 'Admin IP',
+            onTap: _showAdminIpSyncDialog,
+          ),
+        ],
       ],
     );
   }
