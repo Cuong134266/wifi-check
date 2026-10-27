@@ -342,24 +342,76 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
               .toList(),
         ),
         const SizedBox(height: 22),
-        _buildMeaningSection('Thông điệp hôm nay', card['dailyMessage']),
-        _buildMeaningSection('Điều nên chú ý', card['caution']),
-        _buildMeaningSection('Một việc nhỏ nên làm', card['smallAction']),
-        const SizedBox(height: 16),
-        const Text(
-          'KHÁM PHÁ CHI TIẾT LÁ BÀI',
-          style: TextStyle(
-            color: Color(0xFF9A753B),
-            fontSize: 10,
-            fontWeight: FontWeight.w700,
-            letterSpacing: 1.3,
-          ),
+        _buildFeaturedMeaning(
+          'THÔNG ĐIỆP HÔM NAY',
+          card['dailyMessage'],
+          Icons.auto_awesome_rounded,
         ),
-        const SizedBox(height: 4),
-        _buildMeaningSection('Góc nhìn về bản thân', card['overview']),
-        _buildMeaningSection('Công việc & nguồn lực', card['work']),
-        _buildMeaningSection('Mối quan hệ', card['love']),
-        _buildMeaningSection('Mặt hạn chế cần đối chiếu', card['shadow']),
+        const SizedBox(height: 12),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: _buildCompactMeaning(
+                'ĐIỀU NÊN CHÚ Ý',
+                card['caution'],
+                Icons.lightbulb_outline_rounded,
+                const Color(0xFF8A6B32),
+                const Color(0xFFFFF8E9),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: _buildCompactMeaning(
+                'MỘT VIỆC NHỎ',
+                card['smallAction'],
+                Icons.spa_outlined,
+                const Color(0xFF477B70),
+                const Color(0xFFEEF7F3),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 28),
+        Row(
+          children: [
+            Container(width: 26, height: 1, color: const Color(0xFFC6AB7D)),
+            const SizedBox(width: 9),
+            const Text(
+              'KHÁM PHÁ CHI TIẾT',
+              style: TextStyle(
+                color: Color(0xFF9A753B),
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 1.5,
+              ),
+            ),
+          ],
+        ),
+        _buildMeaningSection(
+          'Bản thân',
+          card['overview'],
+          icon: Icons.person_outline_rounded,
+          tint: const Color(0xFF8069A2),
+        ),
+        _buildMeaningSection(
+          'Công việc & nguồn lực',
+          card['work'],
+          icon: Icons.work_outline_rounded,
+          tint: const Color(0xFFB18443),
+        ),
+        _buildMeaningSection(
+          'Mối quan hệ',
+          card['love'],
+          icon: Icons.favorite_border_rounded,
+          tint: const Color(0xFFB66E78),
+        ),
+        _buildMeaningSection(
+          'Góc cần cân bằng',
+          card['shadow'],
+          icon: Icons.balance_rounded,
+          tint: const Color(0xFF718096),
+        ),
         Container(
           width: double.infinity,
           margin: const EdgeInsets.only(top: 22),
@@ -399,29 +451,149 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     );
   }
 
-  Widget _buildMeaningSection(String title, dynamic content) {
+  Widget _buildFeaturedMeaning(String label, dynamic content, IconData icon) {
     final text = content?.toString().trim() ?? '';
     if (text.isEmpty) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 21),
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(19, 18, 19, 20),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(18),
+        gradient: const LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [Color(0xFFFFF8E9), Color(0xFFF8F4FF)],
+        ),
+        border: Border.all(color: const Color(0xFFEDE2CD)),
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          Row(
+            children: [
+              Icon(icon, size: 16, color: const Color(0xFF9A753B)),
+              const SizedBox(width: 7),
+              Text(
+                label,
+                style: const TextStyle(
+                  color: Color(0xFF9A753B),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w800,
+                  letterSpacing: 1.2,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
           Text(
-            title,
+            text,
             style: const TextStyle(
-              color: Color(0xFF172033),
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
+              color: Color(0xFF263248),
+              fontSize: 17,
+              height: 1.65,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCompactMeaning(
+    String label,
+    dynamic content,
+    IconData icon,
+    Color accent,
+    Color background,
+  ) {
+    final text = content?.toString().trim() ?? '';
+    if (text.isEmpty) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: accent.withValues(alpha: .13)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, size: 17, color: accent),
+          const SizedBox(height: 10),
+          Text(
+            label,
+            style: TextStyle(
+              color: accent,
+              fontSize: 9,
+              fontWeight: FontWeight.w800,
+              letterSpacing: .8,
             ),
           ),
           const SizedBox(height: 7),
           Text(
             text,
             style: const TextStyle(
+              color: Color(0xFF526176),
+              fontSize: 12,
+              height: 1.55,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMeaningSection(
+    String title,
+    dynamic content, {
+    required IconData icon,
+    required Color tint,
+  }) {
+    final text = content?.toString().trim() ?? '';
+    if (text.isEmpty) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.fromLTRB(14, 14, 15, 15),
+      decoration: BoxDecoration(
+        color: const Color(0xFFFAFBFD),
+        borderRadius: BorderRadius.circular(15),
+        border: Border.all(color: const Color(0xFFE9EDF2)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                width: 30,
+                height: 30,
+                decoration: BoxDecoration(
+                  color: tint.withValues(alpha: .10),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, size: 17, color: tint),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: Color(0xFF172033),
+                    fontSize: 13,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            text,
+            style: const TextStyle(
               color: Color(0xFF64748B),
               fontSize: 13,
-              height: 1.65,
+              height: 1.7,
             ),
           ),
         ],
@@ -490,7 +662,8 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
             _isLoading
                 ? 'Đang xác minh tài khoản, vị trí và mạng công ty.'
                 : _isSuccess
-                ? (widget.isAlreadyCheckedIn && widget.checkinTime != null
+                ? (widget.isAlreadyCheckedIn &&
+                          _isCheckinTimeOnly(widget.checkinTime)
                       ? widget.checkinTime!
                       : 'Đã ghi nhận lúc $currentTime')
                 : (error.isNotEmpty
@@ -517,6 +690,11 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
         ],
       ),
     );
+  }
+
+  bool _isCheckinTimeOnly(String? value) {
+    if (value == null) return false;
+    return RegExp(r'^\s*(?:Lúc\s*)?\d{1,2}:\d{2}\s*$').hasMatch(value);
   }
 
   Widget _buildSkeleton() {
@@ -758,9 +936,31 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
                         if (!showFront)
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.asset(
-                              'assets/images/Cover.webp',
-                              fit: BoxFit.cover,
+                            child: DecoratedBox(
+                              decoration: const BoxDecoration(
+                                color: Color(0xFFF6EFE2),
+                              ),
+                              child: Image.asset(
+                                'assets/images/Cover.webp',
+                                fit: BoxFit.cover,
+                                frameBuilder:
+                                    (
+                                      context,
+                                      child,
+                                      frame,
+                                      wasSynchronouslyLoaded,
+                                    ) {
+                                      if (wasSynchronouslyLoaded) return child;
+                                      return AnimatedOpacity(
+                                        opacity: frame == null ? 0 : 1,
+                                        duration: const Duration(
+                                          milliseconds: 300,
+                                        ),
+                                        curve: Curves.easeOut,
+                                        child: child,
+                                      );
+                                    },
+                              ),
                             ),
                           ),
                         if (showFront)

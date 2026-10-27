@@ -271,7 +271,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       _wifiStatusText = 'Đã sẵn sàng điểm danh...';
       _wifiSubText = publicIp.isEmpty
           ? 'Hệ thống sẽ ghi nhận bằng GPS và QR/WiFi khi có.'
-          : 'IP mạng: $publicIp • chỉ dùng để ghi log.';
+          : 'IP mạng hiện tại: $publicIp';
       _isIpValid = true;
       _isWifiValid = true;
     });
@@ -516,7 +516,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
       if (ipResult['verified'] != true && ipResult['skipped'] != true) {
         _lastCheckinError =
-            'Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}';
+            'Địa chỉ IP mạng này chưa có trong danh sách công ty. Hãy kết nối mạng công ty hoặc liên hệ Admin để cập nhật IP.\n${ipResult['reason'] ?? ''}';
         if (showErrorPopup) _showErrorPopup(_lastCheckinError);
         return false;
       }
