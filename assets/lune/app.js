@@ -25,8 +25,7 @@ if(type==='swords')symbol='<path d="M90 52L100 80 94 153H86L80 80ZM64 153H116M90
 if(type==='pentacles')symbol='<circle cx="90" cy="119" r="48" fill="none" stroke-width="2"/><path d="M90 77L115 153 51 106H129L65 153Z" fill="none" stroke-width="2"/>';
 return `<svg viewBox="0 0 180 294" xmlns="http://www.w3.org/2000/svg"><rect width="180" height="294" fill="#d3c39d"/><rect x="8" y="8" width="164" height="278" rx="3" fill="none" stroke="#85744f" stroke-width=".6"/><path d="M17 219V82a73 73 0 0 1 146 0V219Z" fill="#1b2e3b"/><clipPath id="clip${id}"><path d="M18 219V82a72 72 0 0 1 144 0V219Z"/></clipPath><g clip-path="url(#clip${id})"><g fill="#c2a779" stroke="#c2a779" stroke-width=".8">${symbol}</g><path d="M14 201Q50 175 90 199T169 193V224H14Z" fill="#596e65"/><path d="M14 215Q57 195 96 211T171 207" fill="none" stroke="#b8b391" stroke-width=".7"/><g fill="#d2ba80">${star(37,153,3)}${star(143,56,3)}${star(31,76,2)}</g><path d="M35 219Q36 193 29 181M35 211Q47 203 47 193M145 219Q145 192 151 178M145 207Q134 198 134 189" stroke="#c2b38c" fill="none"/></g><text x="90" y="237" text-anchor="middle" fill="#75603d" font-size="8" letter-spacing="3" font-family="Georgia">${catalog[id].label}</text><text x="90" y="258" text-anchor="middle" fill="#2a3838" font-size="${d[0].length>16?10:12}" letter-spacing="1" font-family="Georgia">${d[0].toUpperCase()}</text><path d="M62 273H79M101 273H118" stroke="#8f7955" stroke-width=".6"/><g fill="#8f7955">${star(90,273,3)}</g></svg>`}
 function frontFace(id){
-  const encodedName=encodeURIComponent(catalog[id].name);
-  const fileName=location.pathname.includes('/assets/assets/')?encodeURIComponent(encodedName):encodedName;
+  const fileName=catalog[id].name.trim().replace(/\s+/g,'_');
   const src='../images/'+fileName+'.webp?v=2';
   return `<img class="tarot-art" src="${src}" alt="" draggable="false"><div class="holo-foil"></div><div class="holo-glare"></div><div class="holo-grain"></div><div class="holo-rim"></div>`;
 }

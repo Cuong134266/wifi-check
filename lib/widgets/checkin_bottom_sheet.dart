@@ -1,7 +1,7 @@
 import 'dart:async';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
-import 'package:flutter/foundation.dart';
 
 // Conditional import: native dùng WebView, web dùng Image fallback
 import 'checkin_map_native.dart'
@@ -39,10 +39,12 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   bool _isSuccess = false;
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
+  late final ScrollController _tarotScrollController;
 
   @override
   void initState() {
     super.initState();
+    _tarotScrollController = ScrollController();
     _fadeController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 400),
@@ -62,6 +64,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
 
   @override
   void dispose() {
+    _tarotScrollController.dispose();
     _fadeController.dispose();
     super.dispose();
   }
@@ -172,49 +175,65 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
             ),
           ),
           Expanded(
-            child: Scrollbar(
-              child: ListView(
-                physics: const AlwaysScrollableScrollPhysics(),
-                padding: const EdgeInsets.only(top: 8, bottom: 20),
-                children: [
-                Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 980),
-                    child: LayoutBuilder(
-                      builder: (context, constraints) {
-                        final compact = constraints.maxWidth < 700;
-                        final artwork = Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _buildTarotCard(),
-                            const SizedBox(height: 22),
-                            _buildTarotCheckinPanel(),
-                          ],
-                        );
-                        final reading = _buildTarotReading();
-
-                        if (compact) {
-                          return Column(
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                scrollbars: false,
+                dragDevices: const {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                  PointerDeviceKind.stylus,
+                },
+              ),
+              child: Scrollbar(
+                controller: _tarotScrollController,
+                thumbVisibility: true,
+                trackVisibility: true,
+                interactive: true,
+                child: SingleChildScrollView(
+                  controller: _tarotScrollController,
+                  physics: const ClampingScrollPhysics(
+                    parent: AlwaysScrollableScrollPhysics(),
+                  ),
+                  padding: const EdgeInsets.only(top: 8, bottom: 20),
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 980),
+                      child: LayoutBuilder(
+                        builder: (context, constraints) {
+                          final compact = constraints.maxWidth < 700;
+                          final artwork = Column(
+                            mainAxisSize: MainAxisSize.min,
                             children: [
-                              artwork,
-                              const SizedBox(height: 28),
-                              reading,
+                              _buildTarotCard(),
+                              const SizedBox(height: 22),
+                              _buildTarotCheckinPanel(),
                             ],
                           );
-                        }
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            SizedBox(width: 292, child: artwork),
-                            const SizedBox(width: 38),
-                            Expanded(child: reading),
-                          ],
-                        );
-                      },
+                          final reading = _buildTarotReading();
+
+                          if (compact) {
+                            return Column(
+                              children: [
+                                artwork,
+                                const SizedBox(height: 28),
+                                reading,
+                              ],
+                            );
+                          }
+                          return Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              SizedBox(width: 292, child: artwork),
+                              const SizedBox(width: 38),
+                              Expanded(child: reading),
+                            ],
+                          );
+                        },
+                      ),
                     ),
                   ),
                 ),
-                ],
               ),
             ),
           ),
@@ -666,30 +685,18 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
 
   Widget _buildTarotCard() {
     final name = widget.tarotCard?['name']?.toString().trim() ?? '';
-    final encodedName = Uri.encodeComponent(Uri.encodeComponent(name));
-    final image = kIsWeb
-        ? Image.network(
-            'assets/assets/images/$encodedName.webp',
-            fit: BoxFit.contain,
-            cacheWidth: 504,
-            filterQuality: FilterQuality.medium,
-            errorBuilder: (_, __, ___) => const Icon(
-              Icons.auto_awesome_rounded,
-              color: Color(0xFFC8AF7F),
-              size: 42,
-            ),
-          )
-        : Image.asset(
-            'assets/images/$name.webp',
-            fit: BoxFit.contain,
-            cacheWidth: 504,
-            filterQuality: FilterQuality.medium,
-            errorBuilder: (_, __, ___) => const Icon(
-              Icons.auto_awesome_rounded,
-              color: Color(0xFFC8AF7F),
-              size: 42,
-            ),
-          );
+    final safeName = name.replaceAll(RegExp(r'\s+'), '_');
+    final image = Image.asset(
+      'assets/images/$safeName.webp',
+      fit: BoxFit.contain,
+      cacheWidth: 504,
+      filterQuality: FilterQuality.medium,
+      errorBuilder: (_, __, ___) => const Icon(
+        Icons.broken_image_outlined,
+        color: Color(0xFFC8AF7F),
+        size: 42,
+      ),
+    );
 
     return Container(
       width: _tarotCardWidth,
@@ -707,11 +714,13 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
         ],
       ),
       clipBehavior: Clip.antiAlias,
-      child: name.isEmpty ? const Icon(
-        Icons.auto_awesome_rounded,
-        color: Color(0xFFC8AF7F),
-        size: 42,
-      ) : image,
+      child: name.isEmpty
+          ? const Icon(
+              Icons.auto_awesome_rounded,
+              color: Color(0xFFC8AF7F),
+              size: 42,
+            )
+          : image,
     );
   }
 
