@@ -53,7 +53,8 @@ function makeDeck(){
   ids.slice(0,72).forEach((id,i)=>{
     const el=document.createElement('button');el.className='card';el.tabIndex=-1;
     el.setAttribute('aria-label','Chọn lá bài úp '+(i+1));
-    el.innerHTML=`<div class="card-inner"><div class="face back" aria-hidden="true">${backArt()}</div><div class="face shuffle-back" aria-hidden="true">${backArt()}</div><div class="face front" aria-hidden="true">${frontFace(id)}</div></div>`;
+    const cover='<img class="tarot-back-art" src="../images/Cover.webp?v=1" alt="" draggable="false">';
+    el.innerHTML=`<div class="card-inner"><div class="face back" aria-hidden="true">${cover}</div><div class="face shuffle-back" aria-hidden="true">${cover}</div><div class="face front" aria-hidden="true">${frontFace(id)}</div></div>`;
     const p={x:0,y:55,z:0,rz:-8,ry:12,rx:8,s:.85,o:0};
     const c={el,id,holo:{tx:0,ty:0,rx:0,ry:0,vx:0,vy:0,x:50,y:50,mx:50,my:50,power:.08,targetPower:.08},p:{...p},t:{...p},v:Object.fromEntries(Object.keys(p).map(k=>[k,0]))};
     el.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||el.hasPointerCapture(e.pointerId))holoPoint(e,c)});

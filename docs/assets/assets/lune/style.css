@@ -87,3 +87,4 @@ body.fan-docked #deck{top:calc(100% + 32px);transform:scale(var(--fan-zoom,1))}
 body.fan-docked main{padding-bottom:170px}
 body.fan-docked .card.hover .back{border-color:#e3cc9e}
 @media(max-width:760px){body.fan-docked .stage{height:240px}body.fan-docked #deck{top:calc(100% + 14px)}}
+.tarot-back-art{width:100%;height:100%;display:block;object-fit:cover;pointer-events:none;user-select:none}

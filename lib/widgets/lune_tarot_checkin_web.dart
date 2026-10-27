@@ -33,7 +33,7 @@ class _LuneTarotCheckinState extends State<LuneTarotCheckin> {
     super.initState();
     _viewType = 'lune-tarot-${identityHashCode(this)}';
     _iframe = html.IFrameElement()
-      ..src = 'assets/assets/lune/index.html?v=25-card-pop'
+      ..src = 'assets/assets/lune/index.html?v=26-cover'
       ..style.border = '0'
       ..style.width = '100%'
       ..style.height = '100%'

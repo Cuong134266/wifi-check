@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
@@ -31,13 +32,21 @@ class CheckinBottomSheet extends StatefulWidget {
 }
 
 class _CheckinBottomSheetState extends State<CheckinBottomSheet>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
   static const double _tarotCardWidth = 252;
   static const double _tarotCardHeight = 370;
+  final GlobalKey _tarotCardKey = GlobalKey();
 
   bool _isLoading = true;
   bool _isSuccess = false;
+  bool _tarotRevealed = false;
+  double _tiltX = 0;
+  double _tiltY = 0;
+  double _foilX = 50;
+  double _foilY = 50;
   late AnimationController _fadeController;
+  late AnimationController _tarotFlipController;
+  late Animation<double> _tarotFlipAnimation;
   late Animation<double> _fadeAnimation;
   late final ScrollController _tarotScrollController;
   int? _scrollPointer;
@@ -55,6 +64,21 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
       parent: _fadeController,
       curve: Curves.easeOut,
     );
+    _tarotFlipController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1050),
+    );
+    _tarotFlipAnimation = CurvedAnimation(
+      parent: _tarotFlipController,
+      curve: Curves.easeInOutCubic,
+    );
+    if (widget.tarotCard != null) {
+      Future.delayed(const Duration(milliseconds: 420), () {
+        if (!mounted || _tarotRevealed) return;
+        setState(() => _tarotRevealed = true);
+        _tarotFlipController.forward(from: 0);
+      });
+    }
     if (widget.isAlreadyCheckedIn) {
       _isLoading = false;
       _isSuccess = true;
@@ -67,6 +91,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   @override
   void dispose() {
     _tarotScrollController.dispose();
+    _tarotFlipController.dispose();
     _fadeController.dispose();
     super.dispose();
   }
@@ -280,11 +305,11 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
         ),
         const SizedBox(height: 10),
         Text(
-          card['vn']?.toString() ?? card['name']?.toString() ?? '',
+          '${card['name'] ?? ''} — ${card['vn'] ?? ''}',
           style: const TextStyle(
             color: Color(0xFF172033),
-            fontSize: 38,
-            height: 1.05,
+            fontSize: 30,
+            height: 1.08,
             fontWeight: FontWeight.w800,
           ),
         ),
@@ -317,21 +342,24 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
               .toList(),
         ),
         const SizedBox(height: 22),
-        Text(
-          card['overview']?.toString() ?? '',
-          style: const TextStyle(
-            color: Color(0xFF475569),
-            fontSize: 14,
-            height: 1.75,
-          ),
-        ),
-        _buildMeaningSection('Tình cảm & kết nối', card['love']),
-        _buildMeaningSection('Công việc & nguồn lực', card['work']),
-        _buildMeaningSection('Mặt hạn chế cần đối chiếu', card['shadow']),
-        _buildMeaningSection('Một bước cụ thể', card['action']),
         _buildMeaningSection('Thông điệp hôm nay', card['dailyMessage']),
         _buildMeaningSection('Điều nên chú ý', card['caution']),
         _buildMeaningSection('Một việc nhỏ nên làm', card['smallAction']),
+        const SizedBox(height: 16),
+        const Text(
+          'KHÁM PHÁ CHI TIẾT LÁ BÀI',
+          style: TextStyle(
+            color: Color(0xFF9A753B),
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.3,
+          ),
+        ),
+        const SizedBox(height: 4),
+        _buildMeaningSection('Góc nhìn về bản thân', card['overview']),
+        _buildMeaningSection('Công việc & nguồn lực', card['work']),
+        _buildMeaningSection('Mối quan hệ', card['love']),
+        _buildMeaningSection('Mặt hạn chế cần đối chiếu', card['shadow']),
         Container(
           width: double.infinity,
           margin: const EdgeInsets.only(top: 22),
@@ -427,7 +455,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
       decoration: BoxDecoration(
         color: background,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: color.withOpacity(.25)),
+        border: Border.all(color: color.withValues(alpha: .25)),
       ),
       child: Column(
         children: [
@@ -688,37 +716,191 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
       fit: BoxFit.contain,
       cacheWidth: 504,
       filterQuality: FilterQuality.medium,
-      errorBuilder: (_, __, ___) => const Icon(
+      errorBuilder: (_, _, _) => const Icon(
         Icons.broken_image_outlined,
         color: Color(0xFFC8AF7F),
         size: 42,
       ),
     );
-
-    return Container(
-      width: _tarotCardWidth,
-      height: _tarotCardHeight,
-      decoration: BoxDecoration(
-        color: const Color(0xFF111A2B),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0xFFC0A06C)),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(.16),
-            blurRadius: 22,
-            offset: const Offset(0, 11),
+    return Listener(
+      key: _tarotCardKey,
+      onPointerHover: _handleTarotPointerHover,
+      onPointerMove: _handleTarotPointerMove,
+      child: MouseRegion(
+        onExit: (_) => _resetTarotTilt(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          excludeFromSemantics: false,
+          onTap: _flipTarotCard,
+          onPanStart: (_) => _resetScrollGesture(),
+          onPanUpdate: (details) => _updateTarotTilt(details.globalPosition),
+          onPanEnd: (_) => _resetTarotTilt(),
+          child: SizedBox(
+            width: _tarotCardWidth,
+            height: _tarotCardHeight,
+            child: AnimatedBuilder(
+              animation: _tarotFlipAnimation,
+              builder: (context, _) {
+                final angle = _tarotFlipAnimation.value * math.pi;
+                final showFront = angle >= math.pi / 2;
+                return Transform(
+                  alignment: Alignment.center,
+                  transform: Matrix4.identity()
+                    ..setEntry(3, 2, .0012)
+                    ..rotateX(_tiltX)
+                    ..rotateY(_tiltY),
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()..rotateY(angle),
+                    child: Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        if (!showFront)
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.asset(
+                              'assets/images/Cover.webp',
+                              fit: BoxFit.cover,
+                            ),
+                          ),
+                        if (showFront)
+                          Transform(
+                            alignment: Alignment.center,
+                            transform: Matrix4.rotationY(math.pi),
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: image,
+                            ),
+                          ),
+                        if (showFront)
+                          IgnorePointer(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: RadialGradient(
+                                    center: Alignment(
+                                      (_foilX - 50) / 50,
+                                      (_foilY - 50) / 50,
+                                    ),
+                                    radius: 1.15,
+                                    colors: [
+                                      const Color(
+                                        0xFFE8D5A8,
+                                      ).withValues(alpha: .20),
+                                      const Color(
+                                        0xFFCDBAF4,
+                                      ).withValues(alpha: .15),
+                                      const Color(
+                                        0xFF8FD8CB,
+                                      ).withValues(alpha: .12),
+                                      const Color(
+                                        0xFFEFB9C8,
+                                      ).withValues(alpha: .14),
+                                      Colors.transparent,
+                                    ],
+                                    stops: const [0, .24, .48, .72, 1],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        if (showFront)
+                          IgnorePointer(
+                            child: ClipRRect(
+                              borderRadius: BorderRadius.circular(12),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  gradient: LinearGradient(
+                                    begin: Alignment(
+                                      (_foilX - 50) / 50 - .6,
+                                      -1,
+                                    ),
+                                    end: Alignment((_foilX - 50) / 50 + .6, 1),
+                                    colors: [
+                                      Colors.transparent,
+                                      Colors.white.withValues(alpha: .26),
+                                      const Color(
+                                        0xFFFFF2D1,
+                                      ).withValues(alpha: .12),
+                                      Colors.transparent,
+                                    ],
+                                    stops: const [0, .46, .52, 1],
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ),
+                        Container(
+                          decoration: BoxDecoration(
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: const Color(0xFFC0A06C)),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withValues(alpha: .16),
+                                blurRadius: 22,
+                                offset: const Offset(0, 11),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
           ),
-        ],
+        ),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: name.isEmpty
-          ? const Icon(
-              Icons.auto_awesome_rounded,
-              color: Color(0xFFC8AF7F),
-              size: 42,
-            )
-          : image,
     );
+  }
+
+  void _resetScrollGesture() {
+    _scrollPointer = null;
+    _scrollPointerY = null;
+  }
+
+  void _updateTarotTilt(Offset globalPosition) {
+    final renderObject = _tarotCardKey.currentContext?.findRenderObject();
+    if (renderObject is! RenderBox) return;
+    final position = renderObject.globalToLocal(globalPosition);
+    final x = (position.dx / _tarotCardWidth * 2 - 1).clamp(-1.0, 1.0);
+    final y = (position.dy / _tarotCardHeight * 2 - 1).clamp(-1.0, 1.0);
+    setState(() {
+      _tiltX = -y * .12;
+      _tiltY = x * .16;
+      _foilX = (50 + x * 38).clamp(12.0, 88.0);
+      _foilY = (50 + y * 38).clamp(12.0, 88.0);
+    });
+  }
+
+  void _handleTarotPointerHover(PointerEvent event) {
+    _updateTarotTilt(event.position);
+  }
+
+  void _handleTarotPointerMove(PointerMoveEvent event) {
+    _updateTarotTilt(event.position);
+  }
+
+  void _resetTarotTilt() {
+    if (!mounted) return;
+    setState(() {
+      _tiltX = 0;
+      _tiltY = 0;
+      _foilX = 50;
+      _foilY = 50;
+    });
+  }
+
+  void _flipTarotCard() {
+    if (_tarotRevealed) {
+      _tarotFlipController.reverse();
+      setState(() => _tarotRevealed = false);
+    } else {
+      setState(() => _tarotRevealed = true);
+      _tarotFlipController.forward();
+    }
   }
 
   void _scrollBy(double delta) {
@@ -732,6 +914,15 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   }
 
   void _handleScrollPointerDown(PointerDownEvent event) {
+    final cardRender = _tarotCardKey.currentContext?.findRenderObject();
+    if (cardRender is RenderBox) {
+      final cardRect = cardRender.localToGlobal(Offset.zero) & cardRender.size;
+      if (cardRect.contains(event.position)) {
+        _scrollPointer = null;
+        _scrollPointerY = null;
+        return;
+      }
+    }
     _scrollPointer = event.pointer;
     _scrollPointerY = event.position.dy;
   }
