@@ -40,6 +40,8 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   late AnimationController _fadeController;
   late Animation<double> _fadeAnimation;
   late final ScrollController _tarotScrollController;
+  int? _scrollPointer;
+  double? _scrollPointerY;
 
   @override
   void initState() {
@@ -175,26 +177,21 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
             ),
           ),
           Expanded(
-            child: ScrollConfiguration(
-              behavior: ScrollConfiguration.of(context).copyWith(
-                scrollbars: false,
-                dragDevices: const {
-                  PointerDeviceKind.touch,
-                  PointerDeviceKind.mouse,
-                  PointerDeviceKind.trackpad,
-                  PointerDeviceKind.stylus,
-                },
-              ),
-              child: Scrollbar(
-                controller: _tarotScrollController,
-                thumbVisibility: true,
-                trackVisibility: true,
-                interactive: true,
+            child: Scrollbar(
+              controller: _tarotScrollController,
+              thumbVisibility: true,
+              trackVisibility: true,
+              interactive: true,
+              child: Listener(
+                behavior: HitTestBehavior.opaque,
+                onPointerDown: _handleScrollPointerDown,
+                onPointerMove: _handleScrollPointerMove,
+                onPointerUp: _handleScrollPointerEnd,
+                onPointerCancel: _handleScrollPointerEnd,
+                onPointerSignal: _handleScrollPointerSignal,
                 child: SingleChildScrollView(
                   controller: _tarotScrollController,
-                  physics: const ClampingScrollPhysics(
-                    parent: AlwaysScrollableScrollPhysics(),
-                  ),
+                  physics: const NeverScrollableScrollPhysics(),
                   padding: const EdgeInsets.only(top: 8, bottom: 20),
                   child: Center(
                     child: ConstrainedBox(
@@ -687,7 +684,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     final name = widget.tarotCard?['name']?.toString().trim() ?? '';
     final safeName = name.replaceAll(RegExp(r'\s+'), '_');
     final image = Image.asset(
-      'assets/images/$safeName.webp',
+      'assets/tarot_thumbs/$safeName.jpg',
       fit: BoxFit.contain,
       cacheWidth: 504,
       filterQuality: FilterQuality.medium,
@@ -722,6 +719,40 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
             )
           : image,
     );
+  }
+
+  void _scrollBy(double delta) {
+    if (!_tarotScrollController.hasClients || delta == 0) return;
+    final position = _tarotScrollController.position;
+    final target = (position.pixels + delta).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    );
+    _tarotScrollController.jumpTo(target.toDouble());
+  }
+
+  void _handleScrollPointerDown(PointerDownEvent event) {
+    _scrollPointer = event.pointer;
+    _scrollPointerY = event.position.dy;
+  }
+
+  void _handleScrollPointerMove(PointerMoveEvent event) {
+    if (_scrollPointer != event.pointer || _scrollPointerY == null) return;
+    final previousY = _scrollPointerY!;
+    _scrollPointerY = event.position.dy;
+    _scrollBy(previousY - event.position.dy);
+  }
+
+  void _handleScrollPointerEnd(PointerEvent event) {
+    if (_scrollPointer != event.pointer) return;
+    _scrollPointer = null;
+    _scrollPointerY = null;
+  }
+
+  void _handleScrollPointerSignal(PointerSignalEvent event) {
+    if (event is PointerScrollEvent) {
+      _scrollBy(event.scrollDelta.dy);
+    }
   }
 
   Widget _buildErrorView() {

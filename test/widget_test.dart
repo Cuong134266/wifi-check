@@ -6,6 +6,7 @@
 // tree, read text, and verify that the values of widget properties are correct.
 
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wifi_checkin_flutter/main.dart';
@@ -65,8 +66,23 @@ void main() {
     );
     expect(before.position.maxScrollExtent, greaterThan(0));
 
-    await tester.drag(scrollable, const Offset(0, -300));
+    final mouse = await tester.startGesture(
+      tester.getCenter(scrollable),
+      kind: PointerDeviceKind.mouse,
+    );
+    await mouse.moveBy(const Offset(0, -300));
+    await mouse.up();
     await tester.pumpAndSettle();
+    expect(before.position.pixels, greaterThan(0));
+
+    before.position.jumpTo(0);
+    await tester.sendEventToBinding(
+      PointerScrollEvent(
+        position: tester.getCenter(scrollable),
+        scrollDelta: const Offset(0, 160),
+      ),
+    );
+    await tester.pump();
     expect(before.position.pixels, greaterThan(0));
   });
 }
