@@ -1113,6 +1113,14 @@ class _CheckinScreenState extends State<CheckinScreen>
                 child: StatefulBuilder(
                   builder: (dialogContext, setDialogState) {
                     final isMatched = _isCurrentIpMatched;
+                    final savedIpList = currentOfficeIp.isNotEmpty
+                        ? currentOfficeIp
+                            .split(RegExp(r'[,;\n\r]+'))
+                            .map((e) => e.trim())
+                            .where((e) => e.isNotEmpty)
+                            .toList()
+                        : <String>[];
+
                     return Container(
                       width: math.min(MediaQuery.of(context).size.width - 32, 440),
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -1152,116 +1160,163 @@ class _CheckinScreenState extends State<CheckinScreen>
                           ),
                           const SizedBox(height: 12),
 
-                          // Box 1: IP hiện tại của thiết bị + badge trạng thái
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF9FAFB),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                          // Body có giới hạn chiều cao tối đa để không bao giờ đẩy mất nút bấm bên dưới
+                          ConstrainedBox(
+                            constraints: BoxConstraints(
+                              maxHeight: MediaQuery.of(context).size.height * 0.58,
                             ),
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
-                                    children: [
-                                      const Text(
-                                        'IP mạng hiện tại của thiết bị:',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Color(0xFF6B7280),
-                                          fontWeight: FontWeight.w500,
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  // Box 1: IP hiện tại của thiết bị + badge trạng thái
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF9FAFB),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                                    ),
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            children: [
+                                              const Text(
+                                                'IP mạng hiện tại của thiết bị:',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  color: Color(0xFF6B7280),
+                                                  fontWeight: FontWeight.w500,
+                                                ),
+                                              ),
+                                              const SizedBox(height: 4),
+                                              SelectableText(
+                                                _publicIp.isNotEmpty ? _publicIp : 'Đang phát hiện...',
+                                                style: const TextStyle(
+                                                  fontSize: 17,
+                                                  fontWeight: FontWeight.w800,
+                                                  color: Color(0xFF111827),
+                                                  fontFamily: 'monospace',
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      SelectableText(
-                                        _publicIp.isNotEmpty ? _publicIp : 'Đang phát hiện...',
-                                        style: const TextStyle(
-                                          fontSize: 17,
-                                          fontWeight: FontWeight.w800,
-                                          color: Color(0xFF111827),
-                                          fontFamily: 'monospace',
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                          decoration: BoxDecoration(
+                                            color: isMatched ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                            borderRadius: BorderRadius.circular(12),
+                                            border: Border.all(
+                                              color: isMatched ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                                            ),
+                                          ),
+                                          child: Row(
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Container(
+                                                width: 7,
+                                                height: 7,
+                                                decoration: BoxDecoration(
+                                                  color: isMatched ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                                  shape: BoxShape.circle,
+                                                ),
+                                              ),
+                                              const SizedBox(width: 5),
+                                              Text(
+                                                isMatched ? 'Đã có' : 'Chưa có',
+                                                style: TextStyle(
+                                                  fontSize: 12,
+                                                  fontWeight: FontWeight.w700,
+                                                  color: isMatched ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                                                ),
+                                              ),
+                                            ],
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                                  decoration: BoxDecoration(
-                                    color: isMatched ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(
-                                      color: isMatched ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                                      ],
                                     ),
                                   ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      Container(
-                                        width: 7,
-                                        height: 7,
-                                        decoration: BoxDecoration(
-                                          color: isMatched ? const Color(0xFF10B981) : const Color(0xFFEF4444),
-                                          shape: BoxShape.circle,
+                                  const SizedBox(height: 10),
+
+                                  // Box 2: Danh sách IP công ty đang lưu trong Settings
+                                  Container(
+                                    width: double.infinity,
+                                    padding: const EdgeInsets.all(14),
+                                    decoration: BoxDecoration(
+                                      color: const Color(0xFFF9FAFB),
+                                      borderRadius: BorderRadius.circular(16),
+                                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                                    ),
+                                    child: Column(
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Row(
+                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            const Text(
+                                              'Danh sách IP công ty đang lưu (Settings):',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                color: Color(0xFF6B7280),
+                                                fontWeight: FontWeight.w600,
+                                              ),
+                                            ),
+                                            if (savedIpList.isNotEmpty)
+                                              Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                decoration: BoxDecoration(
+                                                  color: const Color(0xFFE5E7EB),
+                                                  borderRadius: BorderRadius.circular(8),
+                                                ),
+                                                child: Text(
+                                                  '${savedIpList.length} IP',
+                                                  style: const TextStyle(
+                                                    fontSize: 11,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF4B5563),
+                                                  ),
+                                                ),
+                                              ),
+                                          ],
                                         ),
-                                      ),
-                                      const SizedBox(width: 5),
-                                      Text(
-                                        isMatched ? 'Đã có' : 'Chưa có',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          fontWeight: FontWeight.w700,
-                                          color: isMatched ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                                        const SizedBox(height: 8),
+                                        ConstrainedBox(
+                                          constraints: const BoxConstraints(maxHeight: 160),
+                                          child: Scrollbar(
+                                            thumbVisibility: true,
+                                            child: SingleChildScrollView(
+                                              physics: const BouncingScrollPhysics(),
+                                              child: Padding(
+                                                padding: const EdgeInsets.only(right: 6.0),
+                                                child: SelectableText(
+                                                  currentOfficeIp.isNotEmpty ? currentOfficeIp : '(Chưa cấu hình)',
+                                                  style: const TextStyle(
+                                                    fontSize: 13,
+                                                    fontWeight: FontWeight.w600,
+                                                    color: Color(0xFF374151),
+                                                    fontFamily: 'monospace',
+                                                    height: 1.45,
+                                                  ),
+                                                ),
+                                              ),
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
-                          const SizedBox(height: 10),
+                          const SizedBox(height: 16),
 
-                          // Box 2: Danh sách IP công ty đang lưu trong Settings
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF9FAFB),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Danh sách IP công ty đang lưu (Settings):',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF6B7280),
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                                const SizedBox(height: 5),
-                                SelectableText(
-                                  currentOfficeIp.isNotEmpty ? currentOfficeIp : '(Chưa cấu hình)',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF374151),
-                                    fontFamily: 'monospace',
-                                    height: 1.4,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(height: 18),
-
-                          // Nút hành động
+                          // Nút hành động luôn hiển thị cố định ở đáy, không bao giờ bị che
                           SizedBox(
                             width: double.infinity,
                             height: 48,
