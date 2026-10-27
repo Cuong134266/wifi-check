@@ -99626,7 +99626,7 @@ s="lune-tarot-"+A.ns(p)
 p.d!==$&&A.b4()
 p.d=s
 r=document.createElement("iframe")
-r.src="assets/assets/lune/index.html?v=24-hover-fit"
+r.src="assets/assets/lune/index.html?v=25-card-pop"
 q=r.style
 q.border="0"
 q=r.style
