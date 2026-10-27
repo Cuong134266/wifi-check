@@ -8,11 +8,13 @@ class LuneTarotCheckin extends StatefulWidget {
   const LuneTarotCheckin({
     required this.onCardSelected,
     required this.checkinStatus,
+    required this.interactionEnabled,
     super.key,
   });
 
   final ValueChanged<Map<String, dynamic>> onCardSelected;
   final ValueListenable<Map<String, dynamic>?> checkinStatus;
+  final bool interactionEnabled;
 
   @override
   State<LuneTarotCheckin> createState() => _LuneTarotCheckinState();
@@ -78,6 +80,9 @@ class _LuneTarotCheckinState extends State<LuneTarotCheckin> {
   Widget build(BuildContext context) {
     final controller = _controller;
     if (controller == null) return const SizedBox.shrink();
-    return ClipRect(child: WebViewWidget(controller: controller));
+    return IgnorePointer(
+      ignoring: !widget.interactionEnabled,
+      child: ClipRect(child: WebViewWidget(controller: controller)),
+    );
   }
 }

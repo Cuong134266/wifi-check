@@ -75,6 +75,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   // --- Interaction state ---
   bool _isTarotDrawing = false;
+  bool _isTarotDialogOpen = false;
   final ValueNotifier<Map<String, dynamic>?> _tarotCheckinStatus =
       ValueNotifier<Map<String, dynamic>?>(null);
 
@@ -618,44 +619,53 @@ class _CheckinScreenState extends State<CheckinScreen>
   Future<void> _showCheckinResultSheet(Map<String, dynamic> tarotCard) async {
     if (!mounted) return;
 
-    await showGeneralDialog(
-      context: context,
-      barrierColor: Colors.black.withOpacity(0.5),
-      barrierDismissible: true,
-      barrierLabel: 'Dismiss',
-      transitionDuration: const Duration(milliseconds: 300),
-      pageBuilder: (context, anim1, anim2) {
-        return BackdropFilter(
-          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-          child: Align(
-            alignment: Alignment.bottomCenter,
-            child: Padding(
-              padding: const EdgeInsets.only(bottom: 24.0, left: 16, right: 16),
-              child: Material(
-                color: Colors.transparent,
-                child: CheckinBottomSheet(
-                  checkinTask: _performTarotCheckin,
-                  locationInfo: _locationInfo,
-                  isAlreadyCheckedIn: _isCheckedIn,
-                  checkinTime: _wifiSubText,
-                  tarotCard: tarotCard,
-                  errorMessage: () => _lastCheckinError,
+    setState(() => _isTarotDialogOpen = true);
+    try {
+      await showGeneralDialog(
+        context: context,
+        barrierColor: Colors.black.withOpacity(0.5),
+        barrierDismissible: true,
+        barrierLabel: 'Dismiss',
+        transitionDuration: const Duration(milliseconds: 300),
+        pageBuilder: (context, anim1, anim2) {
+          return BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+            child: Align(
+              alignment: Alignment.bottomCenter,
+              child: Padding(
+                padding: const EdgeInsets.only(
+                  bottom: 24.0,
+                  left: 16,
+                  right: 16,
+                ),
+                child: Material(
+                  color: Colors.transparent,
+                  child: CheckinBottomSheet(
+                    checkinTask: _performTarotCheckin,
+                    locationInfo: _locationInfo,
+                    isAlreadyCheckedIn: _isCheckedIn,
+                    checkinTime: _wifiSubText,
+                    tarotCard: tarotCard,
+                    errorMessage: () => _lastCheckinError,
+                  ),
                 ),
               ),
             ),
-          ),
-        );
-      },
-      transitionBuilder: (context, anim1, anim2, child) {
-        return SlideTransition(
-          position: Tween<Offset>(
-            begin: const Offset(0, 1),
-            end: Offset.zero,
-          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
-          child: FadeTransition(opacity: anim1, child: child),
-        );
-      },
-    );
+          );
+        },
+        transitionBuilder: (context, anim1, anim2, child) {
+          return SlideTransition(
+            position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                .animate(
+                  CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
+                ),
+            child: FadeTransition(opacity: anim1, child: child),
+          );
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _isTarotDialogOpen = false);
+    }
     if (mounted) setState(() {});
   }
 
@@ -1153,10 +1163,10 @@ class _CheckinScreenState extends State<CheckinScreen>
                     final isMatched = _isCurrentIpMatched;
                     final savedIpList = currentOfficeIp.isNotEmpty
                         ? currentOfficeIp
-                            .split(RegExp(r'[,;\n\r]+'))
-                            .map((e) => e.trim())
-                            .where((e) => e.isNotEmpty)
-                            .toList()
+                              .split(RegExp(r'[,;\n\r]+'))
+                              .map((e) => e.trim())
+                              .where((e) => e.isNotEmpty)
+                              .toList()
                         : <String>[];
 
                     return Container(
@@ -1208,7 +1218,8 @@ class _CheckinScreenState extends State<CheckinScreen>
                           // Body có giới hạn chiều cao tối đa để không bao giờ đẩy mất nút bấm bên dưới
                           ConstrainedBox(
                             constraints: BoxConstraints(
-                              maxHeight: MediaQuery.of(context).size.height * 0.58,
+                              maxHeight:
+                                  MediaQuery.of(context).size.height * 0.58,
                             ),
                             child: SingleChildScrollView(
                               physics: const BouncingScrollPhysics(),
@@ -1222,13 +1233,16 @@ class _CheckinScreenState extends State<CheckinScreen>
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFF9FAFB),
                                       borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                                      border: Border.all(
+                                        color: const Color(0xFFE5E7EB),
+                                      ),
                                     ),
                                     child: Row(
                                       children: [
                                         Expanded(
                                           child: Column(
-                                            crossAxisAlignment: CrossAxisAlignment.start,
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
                                             children: [
                                               const Text(
                                                 'IP mạng hiện tại của thiết bị:',
@@ -1240,7 +1254,9 @@ class _CheckinScreenState extends State<CheckinScreen>
                                               ),
                                               const SizedBox(height: 4),
                                               SelectableText(
-                                                _publicIp.isNotEmpty ? _publicIp : 'Đang phát hiện...',
+                                                _publicIp.isNotEmpty
+                                                    ? _publicIp
+                                                    : 'Đang phát hiện...',
                                                 style: const TextStyle(
                                                   fontSize: 17,
                                                   fontWeight: FontWeight.w800,
@@ -1252,12 +1268,21 @@ class _CheckinScreenState extends State<CheckinScreen>
                                           ),
                                         ),
                                         Container(
-                                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                          padding: const EdgeInsets.symmetric(
+                                            horizontal: 10,
+                                            vertical: 5,
+                                          ),
                                           decoration: BoxDecoration(
-                                            color: isMatched ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
-                                            borderRadius: BorderRadius.circular(12),
+                                            color: isMatched
+                                                ? const Color(0xFFECFDF5)
+                                                : const Color(0xFFFEF2F2),
+                                            borderRadius: BorderRadius.circular(
+                                              12,
+                                            ),
                                             border: Border.all(
-                                              color: isMatched ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                                              color: isMatched
+                                                  ? const Color(0xFFA7F3D0)
+                                                  : const Color(0xFFFECACA),
                                             ),
                                           ),
                                           child: Row(
@@ -1267,7 +1292,9 @@ class _CheckinScreenState extends State<CheckinScreen>
                                                 width: 7,
                                                 height: 7,
                                                 decoration: BoxDecoration(
-                                                  color: isMatched ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                                  color: isMatched
+                                                      ? const Color(0xFF10B981)
+                                                      : const Color(0xFFEF4444),
                                                   shape: BoxShape.circle,
                                                 ),
                                               ),
@@ -1277,7 +1304,9 @@ class _CheckinScreenState extends State<CheckinScreen>
                                                 style: TextStyle(
                                                   fontSize: 12,
                                                   fontWeight: FontWeight.w700,
-                                                  color: isMatched ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                                                  color: isMatched
+                                                      ? const Color(0xFF047857)
+                                                      : const Color(0xFFB91C1C),
                                                 ),
                                               ),
                                             ],
@@ -1295,13 +1324,17 @@ class _CheckinScreenState extends State<CheckinScreen>
                                     decoration: BoxDecoration(
                                       color: const Color(0xFFF9FAFB),
                                       borderRadius: BorderRadius.circular(16),
-                                      border: Border.all(color: const Color(0xFFE5E7EB)),
+                                      border: Border.all(
+                                        color: const Color(0xFFE5E7EB),
+                                      ),
                                     ),
                                     child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
                                       children: [
                                         Row(
-                                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
                                           children: [
                                             const Text(
                                               'Danh sách IP công ty đang lưu (Settings):',
@@ -1313,10 +1346,17 @@ class _CheckinScreenState extends State<CheckinScreen>
                                             ),
                                             if (savedIpList.isNotEmpty)
                                               Container(
-                                                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                                padding:
+                                                    const EdgeInsets.symmetric(
+                                                      horizontal: 6,
+                                                      vertical: 2,
+                                                    ),
                                                 decoration: BoxDecoration(
-                                                  color: const Color(0xFFE5E7EB),
-                                                  borderRadius: BorderRadius.circular(8),
+                                                  color: const Color(
+                                                    0xFFE5E7EB,
+                                                  ),
+                                                  borderRadius:
+                                                      BorderRadius.circular(8),
                                                 ),
                                                 child: Text(
                                                   '${savedIpList.length} IP',
@@ -1331,15 +1371,22 @@ class _CheckinScreenState extends State<CheckinScreen>
                                         ),
                                         const SizedBox(height: 8),
                                         ConstrainedBox(
-                                          constraints: const BoxConstraints(maxHeight: 160),
+                                          constraints: const BoxConstraints(
+                                            maxHeight: 160,
+                                          ),
                                           child: Scrollbar(
                                             thumbVisibility: true,
                                             child: SingleChildScrollView(
-                                              physics: const BouncingScrollPhysics(),
+                                              physics:
+                                                  const BouncingScrollPhysics(),
                                               child: Padding(
-                                                padding: const EdgeInsets.only(right: 6.0),
+                                                padding: const EdgeInsets.only(
+                                                  right: 6.0,
+                                                ),
                                                 child: SelectableText(
-                                                  currentOfficeIp.isNotEmpty ? currentOfficeIp : '(Chưa cấu hình)',
+                                                  currentOfficeIp.isNotEmpty
+                                                      ? currentOfficeIp
+                                                      : '(Chưa cấu hình)',
                                                   style: const TextStyle(
                                                     fontSize: 13,
                                                     fontWeight: FontWeight.w600,
@@ -1709,6 +1756,7 @@ class _CheckinScreenState extends State<CheckinScreen>
           child: LuneTarotCheckin(
             onCardSelected: _onLuneCardSelected,
             checkinStatus: _tarotCheckinStatus,
+            interactionEnabled: !_isTarotDialogOpen,
           ),
         ),
       ],
