@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter/foundation.dart';
@@ -32,16 +31,14 @@ class CheckinBottomSheet extends StatefulWidget {
 }
 
 class _CheckinBottomSheetState extends State<CheckinBottomSheet>
-    with TickerProviderStateMixin {
+    with SingleTickerProviderStateMixin {
   static const double _tarotCardWidth = 252;
   static const double _tarotCardHeight = 370;
 
   bool _isLoading = true;
   bool _isSuccess = false;
   late AnimationController _fadeController;
-  late AnimationController _holoController;
   late Animation<double> _fadeAnimation;
-  Offset _holoTilt = Offset.zero;
 
   @override
   void initState() {
@@ -54,16 +51,6 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
       parent: _fadeController,
       curve: Curves.easeOut,
     );
-    _holoController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 1450),
-    );
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted && widget.tarotCard != null) {
-        _holoController.forward();
-      }
-    });
-
     if (widget.isAlreadyCheckedIn) {
       _isLoading = false;
       _isSuccess = true;
@@ -76,7 +63,6 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   @override
   void dispose() {
     _fadeController.dispose();
-    _holoController.dispose();
     super.dispose();
   }
 
@@ -186,10 +172,11 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
             ),
           ),
           Expanded(
-            child: ListView(
-              physics: const BouncingScrollPhysics(),
-              padding: const EdgeInsets.only(top: 8, bottom: 20),
-              children: [
+            child: Scrollbar(
+              child: ListView(
+                physics: const AlwaysScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(top: 8, bottom: 20),
+                children: [
                 Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 980),
@@ -227,7 +214,8 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
                     ),
                   ),
                 ),
-              ],
+                ],
+              ),
             ),
           ),
           SizedBox(
@@ -678,184 +666,53 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
 
   Widget _buildTarotCard() {
     final name = widget.tarotCard?['name']?.toString().trim() ?? '';
-    return MouseRegion(
-      onHover: (event) => _updateHoloTilt(event.localPosition),
-      onExit: (_) => _resetHoloTilt(),
-      child: GestureDetector(
-        behavior: HitTestBehavior.opaque,
-        onPanDown: (details) => _updateHoloTilt(details.localPosition),
-        onPanUpdate: (details) => _updateHoloTilt(details.localPosition),
-        onPanEnd: (_) => _resetHoloTilt(),
-        onPanCancel: _resetHoloTilt,
-        child: TweenAnimationBuilder<Offset>(
-          tween: Tween(end: _holoTilt),
-          duration: _holoTilt == Offset.zero
-              ? const Duration(milliseconds: 520)
-              : const Duration(milliseconds: 180),
-          curve: _holoTilt == Offset.zero
-              ? Curves.easeOutCubic
-              : Curves.easeOut,
-          builder: (context, tilt, child) {
-            final amount = math.min(1.0, tilt.distance);
-            final foilOpacity = .055 + amount * .12;
-            final glareOpacity = .07 + amount * .20;
-            final transform = Matrix4.identity()
-              ..setEntry(3, 2, .00115)
-              ..rotateX(-tilt.dy * .105)
-              ..rotateY(tilt.dx * .13);
+    final encodedName = Uri.encodeComponent(Uri.encodeComponent(name));
+    final image = kIsWeb
+        ? Image.network(
+            'assets/assets/images/$encodedName.webp',
+            fit: BoxFit.contain,
+            cacheWidth: 504,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.auto_awesome_rounded,
+              color: Color(0xFFC8AF7F),
+              size: 42,
+            ),
+          )
+        : Image.asset(
+            'assets/images/$name.webp',
+            fit: BoxFit.contain,
+            cacheWidth: 504,
+            filterQuality: FilterQuality.medium,
+            errorBuilder: (_, __, ___) => const Icon(
+              Icons.auto_awesome_rounded,
+              color: Color(0xFFC8AF7F),
+              size: 42,
+            ),
+          );
 
-            return Transform(
-              alignment: Alignment.center,
-              transform: transform,
-              child: Container(
-                width: _tarotCardWidth,
-                height: _tarotCardHeight,
-                decoration: BoxDecoration(
-                  color: const Color(0xFF111A2B),
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: const Color(0xFFC0A06C)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(.16 + amount * .08),
-                      blurRadius: 22 + amount * 8,
-                      offset: Offset(tilt.dx * -7, 11 + tilt.dy * 5),
-                    ),
-                  ],
-                ),
-                clipBehavior: Clip.antiAlias,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    if (name.isEmpty)
-                      const Icon(
-                        Icons.auto_awesome_rounded,
-                        color: Color(0xFFC8AF7F),
-                        size: 42,
-                      )
-                    else
-                      Image.asset(
-                        'assets/images/$name.webp',
-                        fit: BoxFit.contain,
-                        errorBuilder: (_, __, ___) => const Icon(
-                          Icons.auto_awesome_rounded,
-                          color: Color(0xFFC8AF7F),
-                          size: 42,
-                        ),
-                      ),
-                    IgnorePointer(
-                      child: Opacity(
-                        opacity: foilOpacity,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: LinearGradient(
-                              begin: Alignment(
-                                -1 + tilt.dx * .45,
-                                -1 + tilt.dy * .35,
-                              ),
-                              end: Alignment(
-                                1 + tilt.dx * .25,
-                                1 + tilt.dy * .45,
-                              ),
-                              stops: const [0, .22, .43, .64, .82, 1],
-                              colors: const [
-                                Colors.transparent,
-                                Color(0xFFE8D5A8),
-                                Color(0xFFCDBAF4),
-                                Color(0xFF8FD8CB),
-                                Color(0xFFEFB9C8),
-                                Colors.transparent,
-                              ],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    IgnorePointer(
-                      child: Opacity(
-                        opacity: glareOpacity,
-                        child: DecoratedBox(
-                          decoration: BoxDecoration(
-                            gradient: RadialGradient(
-                              center: Alignment(tilt.dx, tilt.dy),
-                              radius: .72,
-                              colors: const [
-                                Color(0xB8FFF9ED),
-                                Color(0x35FFFFFF),
-                                Colors.transparent,
-                              ],
-                              stops: const [0, .28, 1],
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    IgnorePointer(
-                      child: AnimatedBuilder(
-                        animation: _holoController,
-                        builder: (context, child) {
-                          final progress = Curves.easeInOutCubic.transform(
-                            _holoController.value,
-                          );
-                          final sweep = -3.2 + progress * 6.4;
-                          final opacity =
-                              math.sin(_holoController.value * math.pi) * .32;
-                          return Opacity(
-                            opacity: opacity.clamp(0.0, 1.0),
-                            child: DecoratedBox(
-                              decoration: BoxDecoration(
-                                gradient: LinearGradient(
-                                  begin: Alignment(sweep - .7, -1),
-                                  end: Alignment(sweep + .7, 1),
-                                  stops: const [0, .4, .5, .6, 1],
-                                  colors: const [
-                                    Colors.transparent,
-                                    Colors.transparent,
-                                    Color(0xD9FFF9EA),
-                                    Colors.transparent,
-                                    Colors.transparent,
-                                  ],
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
-                    ),
-                    IgnorePointer(
-                      child: DecoratedBox(
-                        decoration: BoxDecoration(
-                          borderRadius: BorderRadius.circular(11),
-                          border: Border.all(
-                            color: Color.lerp(
-                              const Color(0x45E5C98F),
-                              const Color(0x66BDAFE6),
-                              (tilt.dx + 1) / 2,
-                            )!,
-                            width: 1,
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            );
-          },
-        ),
+    return Container(
+      width: _tarotCardWidth,
+      height: _tarotCardHeight,
+      decoration: BoxDecoration(
+        color: const Color(0xFF111A2B),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: const Color(0xFFC0A06C)),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(.16),
+            blurRadius: 22,
+            offset: const Offset(0, 11),
+          ),
+        ],
       ),
+      clipBehavior: Clip.antiAlias,
+      child: name.isEmpty ? const Icon(
+        Icons.auto_awesome_rounded,
+        color: Color(0xFFC8AF7F),
+        size: 42,
+      ) : image,
     );
-  }
-
-  void _updateHoloTilt(Offset position) {
-    final dx = ((position.dx / _tarotCardWidth) * 2 - 1).clamp(-1.0, 1.0);
-    final dy = ((position.dy / _tarotCardHeight) * 2 - 1).clamp(-1.0, 1.0);
-    if (!mounted) return;
-    setState(() => _holoTilt = Offset(dx, dy));
-  }
-
-  void _resetHoloTilt() {
-    if (!mounted || _holoTilt == Offset.zero) return;
-    setState(() => _holoTilt = Offset.zero);
   }
 
   Widget _buildErrorView() {
