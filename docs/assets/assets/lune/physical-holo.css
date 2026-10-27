@@ -1,0 +1,28 @@
+/* One soft reflection pass when the selected Tarot face is revealed. */
+.front::after {
+  background: linear-gradient(
+    110deg,
+    transparent 37%,
+    rgb(255 249 230 / 61%) 48%,
+    rgb(217 201 240 / 30%) 52%,
+    transparent 63%
+  );
+  mix-blend-mode: screen;
+}
+
+.card.reveal .front::after {
+  animation: physical-holo-sweep 1.45s 0.58s cubic-bezier(.2, .7, .2, 1)
+    forwards;
+}
+
+@keyframes physical-holo-sweep {
+  to {
+    transform: translateX(110%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card.reveal .front::after {
+    animation-duration: 0.01ms;
+  }
+}

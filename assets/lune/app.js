@@ -42,8 +42,9 @@ const pause=ms=>new Promise(r=>setTimeout(r,reduce?Math.min(ms,80):ms));
 function tone(kind='paper'){if(!soundOn)return;try{audioCtx??=new(window.AudioContext||window.webkitAudioContext)();audioCtx.resume();const t=audioCtx.currentTime,g=audioCtx.createGain();g.connect(audioCtx.destination);if(kind==='paper'){const b=audioCtx.createBuffer(1,audioCtx.sampleRate*.09,audioCtx.sampleRate),arr=b.getChannelData(0);for(let i=0;i<arr.length;i++)arr[i]=(Math.random()*2-1)*.14;const n=audioCtx.createBufferSource(),f=audioCtx.createBiquadFilter();f.type='highpass';f.frequency.value=2000;n.buffer=b;n.connect(f);f.connect(g);g.gain.setValueAtTime(.3,t);g.gain.exponentialRampToValueAtTime(.001,t+.09);n.start()}else{[440,659.25,880].forEach((hz,i)=>{const o=audioCtx.createOscillator(),v=audioCtx.createGain();o.type='sine';o.frequency.value=hz;o.connect(v);v.connect(g);v.gain.setValueAtTime(0,t+i*.08);v.gain.linearRampToValueAtTime(.028,t+i*.08+.04);v.gain.exponentialRampToValueAtTime(.001,t+1.7);o.start(t+i*.08);o.stop(t+1.8)})}}catch{}}
 function setStep(n){[1,2,3].forEach(i=>$('#step'+i).classList.toggle('current',i===n))}
 function mobile(){return innerWidth<=760}
-function fanZoom(){return document.body.classList.contains('fan-docked')?LuneMotion.dockZoom(innerWidth,cards.length):1}
-function setFanDock(on){const before=$('#deck').getBoundingClientRect(),z1=fanZoom();document.documentElement.style.setProperty('--fan-zoom',LuneMotion.dockZoom(innerWidth,cards.length));document.body.classList.toggle('fan-docked',on);const after=$('#deck').getBoundingClientRect(),z2=fanZoom();cards.forEach(c=>{c.p.x=(before.x+c.p.x*z1-after.x)/z2;c.p.y=(before.y+c.p.y*z1-after.y)/z2;c.p.s*=z1/z2;Object.assign(c.t,c.p);for(const k in c.v)c.v[k]=0;});}
+function dockZoom(){const configured=parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--embed-fan-zoom'));return Number.isFinite(configured)?configured:LuneMotion.dockZoom(innerWidth,cards.length)}
+function fanZoom(){return document.body.classList.contains('fan-docked')?dockZoom():1}
+function setFanDock(on){const before=$('#deck').getBoundingClientRect(),z1=fanZoom();document.documentElement.style.setProperty('--fan-zoom',dockZoom());document.body.classList.toggle('fan-docked',on);const after=$('#deck').getBoundingClientRect(),z2=fanZoom();cards.forEach(c=>{c.p.x=(before.x+c.p.x*z1-after.x)/z2;c.p.y=(before.y+c.p.y*z1-after.y)/z2;c.p.s*=z1/z2;Object.assign(c.t,c.p);for(const k in c.v)c.v[k]=0;});}
 function fanPose(i){return LuneMotion.fan(i,cards.length,innerWidth)}
 function target(c,p){Object.assign(c.t,p)}
 function makeDeck(){
@@ -69,7 +70,7 @@ function makeDeck(){
 }
 function refreshFan(){
   if(state!=='fan')return;
-  document.documentElement.style.setProperty('--fan-zoom',LuneMotion.dockZoom(innerWidth,cards.length));
+  document.documentElement.style.setProperty('--fan-zoom',dockZoom());
   cards.forEach((c,i)=>{
     if(drag&&drag.i===i)return;
     const p=LuneMotion.wave(i,cards.length,innerWidth,hover);

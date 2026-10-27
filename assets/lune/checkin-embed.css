@@ -1,4 +1,11 @@
 /* Embed mode keeps the complete LUNE deck/runtime while removing page chrome. */
+:root {
+  /* Match motion.js geometry so the fan stays inside the Flutter viewport. */
+  --cw: 132px;
+  --ch: 216px;
+  --embed-fan-zoom: 0.82;
+}
+
 html, body {
   width: 100%;
   height: 100%;
@@ -70,8 +77,8 @@ body.fan-docked #deck {
 }
 
 body.fan-docked #deck {
-  top: calc(100% - 142px);
-  transform: scale(1);
+  top: calc(100% - 154px);
+  transform: scale(var(--fan-zoom, var(--embed-fan-zoom)));
 }
 
 .ritual-controls,
@@ -292,9 +299,15 @@ body.result .result-actions {
 }
 
 @media (max-width: 760px) {
+  :root {
+    --cw: 94px;
+    --ch: 154px;
+    --embed-fan-zoom: 0.86;
+  }
+
   body.fan-docked #deck {
-    top: calc(100% - 108px);
-    transform: scale(1);
+    top: calc(100% - 118px);
+    transform: scale(var(--fan-zoom, var(--embed-fan-zoom)));
   }
 
   .stage,

@@ -1551,8 +1551,12 @@ class _CheckinScreenState extends State<CheckinScreen>
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           GestureDetector(
-            onTap: () {
-              if (_user != null) _openStats();
+            onTap: () async {
+              if (_user != null) {
+                _openStats();
+                return;
+              }
+              await _ensureLoggedIn();
             },
             onLongPress: _logout,
             child: Container(
@@ -1773,7 +1777,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     );
   }
 
-  Future<void> _onLuneCardSelected(Map<String, dynamic> _card) async {
+  Future<void> _onLuneCardSelected(Map<String, dynamic> card) async {
     if (_isTarotDrawing || _isCheckingIn || _isLoggingIn) return;
 
     setState(() {
@@ -1782,7 +1786,11 @@ class _CheckinScreenState extends State<CheckinScreen>
     });
 
     try {
-      await _showCheckinResultSheet(_card);
+      // Authenticate before opening the tarot result. Opening Google Sign-In
+      // from inside the result dialog creates two stacked routes and can make
+      // the wrong dialog close when authentication completes.
+      if (!await _ensureLoggedIn() || !mounted) return;
+      await _showCheckinResultSheet(card);
     } finally {
       if (mounted) {
         _tarotCheckinStatus.value = {'type': 'lune-command', 'command': 'next'};
