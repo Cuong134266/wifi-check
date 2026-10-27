@@ -348,29 +348,31 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           Icons.auto_awesome_rounded,
         ),
         const SizedBox(height: 12),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: _buildCompactMeaning(
-                'ĐIỀU NÊN CHÚ Ý',
-                card['caution'],
-                Icons.lightbulb_outline_rounded,
-                const Color(0xFF8A6B32),
-                const Color(0xFFFFF8E9),
+        IntrinsicHeight(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: _buildCompactMeaning(
+                  'ĐIỀU NÊN CHÚ Ý',
+                  card['caution'],
+                  Icons.lightbulb_outline_rounded,
+                  const Color(0xFF8A6B32),
+                  const Color(0xFFFFF8E9),
+                ),
               ),
-            ),
-            const SizedBox(width: 10),
-            Expanded(
-              child: _buildCompactMeaning(
-                'MỘT VIỆC NHỎ',
-                card['smallAction'],
-                Icons.spa_outlined,
-                const Color(0xFF477B70),
-                const Color(0xFFEEF7F3),
+              const SizedBox(width: 10),
+              Expanded(
+                child: _buildCompactMeaning(
+                  'MỘT VIỆC NHỎ',
+                  card['smallAction'],
+                  Icons.spa_outlined,
+                  const Color(0xFF477B70),
+                  const Color(0xFFEEF7F3),
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
         const SizedBox(height: 28),
         Row(

@@ -1,0 +1,45 @@
+schema: anpc/v1
+project:
+  name: wifi_checkin_flutter
+  product: UXTeam employee attendance/check-in app
+  verified_platforms: [web, android, ios]
+  language: Dart/Flutter
+  backend: Google Apps Script HTTP API; server-side rules are outside this repository
+entrypoints:
+  app: lib/main.dart
+  web_shell: web/index.html
+  embedded_lune: assets/lune/index.html
+  tests: [test/widget_test.dart, test/performance_services_test.dart]
+modules:
+  app_checkin:
+    paths: [lib/main.dart, lib/screens/checkin_screen.dart]
+    depends_on: [services, widgets]
+    facts: [main initializes API and Google Sign-In, CheckinScreen owns primary orchestration]
+  services:
+    paths: [lib/services/api_service.dart, lib/services/location_service.dart, lib/services/public_ip_service.dart, lib/services/wifi_service.dart, lib/services/device_service.dart, lib/services/qr_checkin_service.dart, lib/services/leave_service.dart]
+    depends_on: [http, geolocator, network_info_plus, permission_handler, shared_preferences]
+  platform_adapters:
+    paths: [lib/services/wifi_service_native.dart, lib/services/wifi_service_web.dart, lib/services/web_sign_in.dart, lib/services/web_sign_in_web.dart, lib/services/web_sign_in_stub.dart, lib/widgets/checkin_map_native.dart, lib/widgets/checkin_map_web.dart]
+    depends_on: [conditional imports from services and widgets]
+  checkin_ui:
+    paths: [lib/widgets/checkin_bottom_sheet.dart, lib/widgets/qr_checkin_sheet.dart, lib/widgets/leave_request_sheet.dart, lib/widgets/admin_ip_sheet.dart]
+    depends_on: [services, checkin_screen orchestration]
+  lune:
+    paths: [assets/lune/app.js, assets/lune/motion.js, assets/lune/tarot-data.js, assets/lune/tarot-sheet-content.js, assets/lune/checkin-bridge.js, lib/widgets/lune_tarot_checkin.dart, lib/widgets/lune_tarot_checkin_native.dart, lib/widgets/lune_tarot_checkin_web.dart]
+    depends_on: [assets/lune/index.html, assets/lune/style.css, assets/lune/checkin-embed.css, assets/lune/physical-holo.css, assets/lune/LUNE — Ý nghĩa 78 lá Tarot.xlsx]
+  deployment:
+    paths: [web, build/web, docs]
+    depends_on: [flutter build web --release --base-href /wifi-check/]
+    facts: [docs root is published web output, docs/v2 and docs/v3 are retained snapshots]
+platform_switches:
+  wifi: lib/services/wifi_service.dart -> wifi_service_native.dart | wifi_service_web.dart (dart.library.html)
+  map: lib/widgets/checkin_bottom_sheet.dart -> checkin_map_native.dart | checkin_map_web.dart (dart.library.html)
+  web_sign_in: lib/services/web_sign_in.dart -> web_sign_in_stub.dart | web_sign_in_web.dart (dart.library.js_util)
+  lune: lib/widgets/lune_tarot_checkin.dart -> native | web implementation (dart.library.html)
+verified_business_facts:
+  - Location and public IP are enforced check-in gates for non-admin attendance.
+  - WifiService.verify exists but current check-in orchestration does not call it; native Wi-Fi metadata is collected/submitted, not an active client rejection gate.
+  - Tarot workbook has one dailyMessage field per card; 7-10 randomized variants are not present in the workbook.
+uncertainties:
+  - Backend deployment source and server-side authorization logic are not present in this repository.
+  - Current staged local UI changes are not represented in the last published docs build unless rebuilt and copied.

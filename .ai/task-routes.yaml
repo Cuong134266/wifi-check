@@ -1,0 +1,33 @@
+schema: anpc/v1
+routes:
+  - task: change app startup, theme, auth initialization, root screen
+    read_first: [lib/main.dart, lib/screens/checkin_screen.dart]
+    validate: [flutter analyze, flutter test]
+  - task: change check-in validation, employee/admin flow, attendance payload
+    read_first: [lib/screens/checkin_screen.dart, lib/services/api_service.dart, lib/services/location_service.dart, lib/services/public_ip_service.dart]
+    notes: Verify existing gate and backend contract before editing; Wi-Fi verify helper is not currently wired into attendance gate.
+    validate: [flutter test, flutter analyze, relevant platform/manual flow]
+  - task: change Wi-Fi, location, IP, device metadata or permissions
+    read_first: [lib/services/wifi_service.dart, lib/services/wifi_service_native.dart, lib/services/wifi_service_web.dart, lib/services/location_service.dart, lib/services/public_ip_service.dart, lib/services/device_service.dart]
+    validate: [flutter test, flutter analyze, platform permission flow]
+  - task: change QR issuance, scanning or QR check-in
+    read_first: [lib/screens/qr_scanner_screen.dart, lib/services/qr_checkin_service.dart, lib/widgets/qr_checkin_sheet.dart, lib/screens/checkin_screen.dart]
+    validate: [flutter test, platform camera/manual QR flow]
+  - task: change leave request flow
+    read_first: [lib/services/leave_service.dart, lib/widgets/leave_request_sheet.dart, lib/screens/checkin_screen.dart]
+    validate: [flutter analyze, relevant form/manual flow]
+  - task: change Tarot card data, interpretation, deck motion or Flutter bridge
+    read_first: [assets/lune/index.html, assets/lune/app.js, assets/lune/motion.js, assets/lune/tarot-data.js, assets/lune/tarot-sheet-content.js, assets/lune/checkin-bridge.js, lib/widgets/lune_tarot_checkin.dart, lib/widgets/checkin_bottom_sheet.dart]
+    notes: Workbook contains one daily message per card; do not claim 7-10 variants until supplied or authored and reviewed.
+    validate: [flutter test, browser/native WebView interaction]
+  - task: change Tarot reveal/check-in result sheet UI
+    read_first: [lib/widgets/checkin_bottom_sheet.dart, lib/screens/checkin_screen.dart]
+    validate: [flutter test, flutter analyze, run UI and inspect scroll/touch behavior]
+  - task: change web build/deployment configuration
+    read_first: [web/index.html, pubspec.yaml, lib/widgets/lune_tarot_checkin_web.dart]
+    build: MSYS_NO_PATHCONV=1 flutter build web --release --base-href /wifi-check/
+    deploy_tree: docs/
+    safeguards: Preserve docs/v2 and docs/v3; verify base href and required copied assets.
+  - task: edit ANPC metadata
+    read_first: [AGENTS.md, .ai/project-map.yaml, .ai/task-routes.yaml, .ai/modules]
+    validate: Check all referenced paths exist and imports/public interfaces against source.
