@@ -12,6 +12,9 @@ import 'package:wifi_checkin_flutter/main.dart';
 
 void main() {
   testWidgets('App launches smoke test', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
     // Build our app and trigger a frame.
     await tester.pumpWidget(const MyApp());
     await tester.pump();

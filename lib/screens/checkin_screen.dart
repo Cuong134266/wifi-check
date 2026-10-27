@@ -3,7 +3,6 @@ import 'dart:async';
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
-import 'package:flutter_svg/flutter_svg.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../widgets/ether_background.dart';
@@ -21,6 +20,7 @@ import '../widgets/qr_checkin_sheet.dart';
 import 'qr_scanner_screen.dart';
 import '../widgets/skeleton_card.dart';
 import '../widgets/count_up_text.dart';
+import '../widgets/lune_tarot_checkin.dart';
 import '../services/web_sign_in.dart' as web;
 import 'dart:math' as math;
 
@@ -45,8 +45,6 @@ class _CheckinScreenState extends State<CheckinScreen>
   // --- Animation ---
   late AnimationController _bounceController;
   late Animation<double> _bounceAnimation;
-  late AnimationController _springController;
-  Animation<double>? _springAnimation;
 
   // --- Container Transform Animation ---
   late AnimationController _expandCtrl;
@@ -65,17 +63,20 @@ class _CheckinScreenState extends State<CheckinScreen>
   String _publicIp = '';
   bool _isIpValid = false;
   bool _isLoggingIn = false;
+  String _lastCheckinError = '';
 
   // --- Location state ---
   Map<String, dynamic> _locationInfo = {};
   bool _isLocationValid = false;
   String _locationStatusText = '';
   bool _isFetchingLocation = false;
-  bool _locationPermissionDenied = false; // true khi user đã bấm Từ chối quyền GPS
+  bool _locationPermissionDenied =
+      false; // true khi user đã bấm Từ chối quyền GPS
 
   // --- Interaction state ---
-  bool _isDragging = false;
-  double _dragOffset = 0.0;
+  bool _isTarotDrawing = false;
+  final ValueNotifier<Map<String, dynamic>?> _tarotCheckinStatus =
+      ValueNotifier<Map<String, dynamic>?>(null);
 
   // Web auth stream
   StreamSubscription<GoogleSignInAuthenticationEvent>? _authSubscription;
@@ -105,7 +106,6 @@ class _CheckinScreenState extends State<CheckinScreen>
     _wifiTimer = Timer.periodic(const Duration(seconds: 30), (timer) {
       if (mounted && !_isCheckedIn) {
         _checkNetwork();
-        _checkLocation();
       }
     });
 
@@ -115,11 +115,6 @@ class _CheckinScreenState extends State<CheckinScreen>
     )..repeat(reverse: true);
     _bounceAnimation = Tween<double>(begin: 0, end: 10).animate(
       CurvedAnimation(parent: _bounceController, curve: Curves.easeInOut),
-    );
-
-    _springController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 600),
     );
 
     _expandCtrl = AnimationController(
@@ -132,7 +127,9 @@ class _CheckinScreenState extends State<CheckinScreen>
     );
 
     // Lắng nghe sự kiện đăng nhập từ Google (cần cho Web renderButton)
-    _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((event) {
+    _authSubscription = GoogleSignIn.instance.authenticationEvents.listen((
+      event,
+    ) {
       if (event is GoogleSignInAuthenticationEventSignIn) {
         _handleGoogleAccount(event.user);
       }
@@ -146,10 +143,10 @@ class _CheckinScreenState extends State<CheckinScreen>
     _clockTimer?.cancel();
     _wifiTimer?.cancel();
     _bounceController.dispose();
-    _springController.dispose();
     _expandCtrl.dispose();
     _headerSlideCtrl.dispose();
     _authSubscription?.cancel();
+    _tarotCheckinStatus.dispose();
     super.dispose();
   }
 
@@ -158,10 +155,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     _loadCache();
     await _restoreCachedUser(); // Khôi phục tài khoản đã lưu trước đó
     await _checkNetwork();
-    
-    // Mở popup hỏi quyền vị trí ngay khi vừa vào web
-    await _checkLocation();
-    
+
     // Nếu đã có user từ cache, tải dữ liệu ngầm
     if (_user != null) {
       _refreshSettingsBg();
@@ -200,7 +194,10 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   /// Lưu tài khoản vào SharedPreferences
-  Future<void> _saveUser(Map<String, dynamic> user, Map<String, dynamic> settings) async {
+  Future<void> _saveUser(
+    Map<String, dynamic> user,
+    Map<String, dynamic> settings,
+  ) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('cached_user', jsonEncode(user));
     await prefs.setString('cached_settings', jsonEncode(settings));
@@ -297,6 +294,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       return ipPattern == cleanCurrentIp;
     });
   }
+
   /// Xử lý GoogleSignInAccount sau khi đăng nhập thành công (dùng chung native + web)
   Future<bool> _handleGoogleAccount(GoogleSignInAccount account) async {
     try {
@@ -310,13 +308,14 @@ class _CheckinScreenState extends State<CheckinScreen>
       if (result['success'] == true) {
         if (!mounted) return false;
         final employee = Map<String, dynamic>.from(result['employee'] as Map);
-        final settings = result['settings'] != null 
-            ? Map<String, dynamic>.from(result['settings'] as Map) 
+        final settings = result['settings'] != null
+            ? Map<String, dynamic>.from(result['settings'] as Map)
             : <String, dynamic>{};
         setState(() {
           _user = employee;
           _settings = settings;
-          if (result['today_status'] is Map && (result['today_status'] as Map)['checked_in'] == true) {
+          if (result['today_status'] is Map &&
+              (result['today_status'] as Map)['checked_in'] == true) {
             _isCheckedIn = true;
           }
         });
@@ -362,14 +361,16 @@ class _CheckinScreenState extends State<CheckinScreen>
         // WEB: Mở dialog chứa nút đăng nhập Google chính thức
         _webLoginCompleter = Completer<bool>();
         bool dialogIsOpen = false;
-        
+
         if (mounted) {
           dialogIsOpen = true;
           showDialog(
             context: context,
             barrierDismissible: true,
             builder: (ctx) => AlertDialog(
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(20),
+              ),
               title: const Text(
                 'Đăng nhập bằng Google',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
@@ -377,22 +378,21 @@ class _CheckinScreenState extends State<CheckinScreen>
               ),
               content: SizedBox(
                 height: 60,
-                child: Center(
-                  child: web.renderButton(),
-                ),
+                child: Center(child: web.renderButton()),
               ),
             ),
           ).then((_) {
             dialogIsOpen = false;
             // User đóng dialog mà chưa đăng nhập
-            if (_webLoginCompleter != null && !_webLoginCompleter!.isCompleted) {
+            if (_webLoginCompleter != null &&
+                !_webLoginCompleter!.isCompleted) {
               _webLoginCompleter!.complete(false);
             }
           });
         }
         final result = await _webLoginCompleter!.future;
         _webLoginCompleter = null;
-        
+
         // Đóng dialog nếu vẫn đang mở (nghĩa là đăng nhập thành công và onSignInResult gọi complete(true))
         if (dialogIsOpen && mounted) {
           Navigator.of(context, rootNavigator: true).pop();
@@ -405,7 +405,8 @@ class _CheckinScreenState extends State<CheckinScreen>
         return await _handleGoogleAccount(authedAccount);
       }
     } catch (e) {
-      if (!e.toString().contains("cancel") && !e.toString().contains("Popup closed")) {
+      if (!e.toString().contains("cancel") &&
+          !e.toString().contains("Popup closed")) {
         _showErrorPopup('Đăng nhập thất bại: $e');
       }
       return false;
@@ -414,7 +415,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     }
   }
 
-  Future<bool> _performCheckin() async {
+  Future<bool> _performCheckin({bool showErrorPopup = true}) async {
     try {
       if (!await _ensureLoggedIn()) return false;
 
@@ -433,41 +434,65 @@ class _CheckinScreenState extends State<CheckinScreen>
       // GATE 1: Kiểm tra GPS trong bán kính công ty (phải có vị trí hợp lệ trước)
       // Ngoại lệ: Nếu là Admin, không chặn cứng GPS để Admin có thể kích hoạt đồng bộ IP mới cho công ty
       if (!_isLocationValid && !isAdmin) {
-        _showErrorPopup('Bạn phải ở trong phạm vi công ty (bán kính 2km) và cấp quyền Vị trí để điểm danh.');
+        _lastCheckinError =
+            _locationInfo['error']?.toString().trim().isNotEmpty == true
+            ? _locationInfo['error'].toString()
+            : 'Bạn phải ở trong phạm vi công ty (bán kính 2km) và cấp quyền Vị trí để điểm danh.';
+        if (showErrorPopup) _showErrorPopup(_lastCheckinError);
         return false;
       }
 
       // GATE 2: Kiểm tra Public IP khớp với công ty (0ms network vì đã có knownIp)
-      var ipResult = await PublicIpService.verify(_settings, knownIp: _publicIp);
+      var ipResult = await PublicIpService.verify(
+        _settings,
+        knownIp: _publicIp,
+      );
       if (ipResult['verified'] != true && ipResult['skipped'] != true) {
         // Fallback 1: Nếu cache settings cũ chưa có IP mới từ Google Sheet, fetch settings mới nhất để thử lại
         try {
           final freshSettingsRes = await ApiService.getSettings();
-          if (freshSettingsRes['success'] == true && freshSettingsRes['settings'] is Map) {
-            _settings = Map<String, dynamic>.from(freshSettingsRes['settings'] as Map);
+          if (freshSettingsRes['success'] == true &&
+              freshSettingsRes['settings'] is Map) {
+            _settings = Map<String, dynamic>.from(
+              freshSettingsRes['settings'] as Map,
+            );
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('cached_settings', jsonEncode(_settings));
-            ipResult = await PublicIpService.verify(_settings, knownIp: _publicIp);
+            ipResult = await PublicIpService.verify(
+              _settings,
+              knownIp: _publicIp,
+            );
           }
         } catch (_) {}
       }
 
       // Fallback 2: Nếu IP không khớp nhưng là ADMIN -> TỰ ĐỘNG CẬP NHẬT IP CÔNG TY!
-      if (ipResult['verified'] != true && ipResult['skipped'] != true && isAdmin && _publicIp.isNotEmpty) {
+      if (ipResult['verified'] != true &&
+          ipResult['skipped'] != true &&
+          isAdmin &&
+          _publicIp.isNotEmpty) {
         try {
           final updateRes = await ApiService.updateOfficeIp(
             adminEmail: _user!['email'],
             newIp: _publicIp,
-            latitude: _locationInfo['latitude'] is num ? (_locationInfo['latitude'] as num).toDouble() : null,
-            longitude: _locationInfo['longitude'] is num ? (_locationInfo['longitude'] as num).toDouble() : null,
+            latitude: _locationInfo['latitude'] is num
+                ? (_locationInfo['latitude'] as num).toDouble()
+                : null,
+            longitude: _locationInfo['longitude'] is num
+                ? (_locationInfo['longitude'] as num).toDouble()
+                : null,
           );
           if (updateRes['success'] == true) {
             final allIps = updateRes['all_ips']?.toString();
             if (allIps != null && allIps.isNotEmpty) {
               _settings['office_public_ip'] = allIps;
             } else {
-              final curr = (_settings['office_public_ip'] ?? '').toString().trim();
-              _settings['office_public_ip'] = curr.isEmpty ? _publicIp : '$curr, $_publicIp';
+              final curr = (_settings['office_public_ip'] ?? '')
+                  .toString()
+                  .trim();
+              _settings['office_public_ip'] = curr.isEmpty
+                  ? _publicIp
+                  : '$curr, $_publicIp';
             }
             final prefs = await SharedPreferences.getInstance();
             await prefs.setString('cached_settings', jsonEncode(_settings));
@@ -477,7 +502,9 @@ class _CheckinScreenState extends State<CheckinScreen>
                 SnackBar(
                   backgroundColor: const Color(0xFF10B981),
                   behavior: SnackBarBehavior.floating,
-                  content: Text('⚡ Admin Auto-Update: Đã thêm IP văn phòng mới ($_publicIp) vào danh sách công ty!'),
+                  content: Text(
+                    '⚡ Admin Auto-Update: Đã thêm IP văn phòng mới ($_publicIp) vào danh sách công ty!',
+                  ),
                   duration: const Duration(seconds: 4),
                 ),
               );
@@ -487,23 +514,28 @@ class _CheckinScreenState extends State<CheckinScreen>
       }
 
       if (ipResult['verified'] != true && ipResult['skipped'] != true) {
-        _showErrorPopup('Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}');
+        _lastCheckinError =
+            'Bạn phải kết nối mạng công ty để điểm danh.\n${ipResult['reason'] ?? ''}';
+        if (showErrorPopup) _showErrorPopup(_lastCheckinError);
         return false;
       }
 
       // Xác định phương thức checkin
       String checkinMethod = _isLocationValid ? 'gps' : 'manual';
-      if (!kIsWeb && _wifiInfo['ssid'] != null && _wifiInfo['ssid'] != 'Web Browser') {
+      if (!kIsWeb &&
+          _wifiInfo['ssid'] != null &&
+          _wifiInfo['ssid'] != 'Web Browser') {
         checkinMethod += '+wifi';
       }
 
-      final res = await ApiService.checkin(_user!['email'], _wifiInfo, _deviceInfo, {
-        'latitude': _locationInfo['latitude']?.toString() ?? '',
-        'longitude': _locationInfo['longitude']?.toString() ?? '',
-        'distance': _locationInfo['distance']?.toString() ?? '',
-        'public_ip': _publicIp,
-        'checkin_method': checkinMethod,
-      });
+      final res =
+          await ApiService.checkin(_user!['email'], _wifiInfo, _deviceInfo, {
+            'latitude': _locationInfo['latitude']?.toString() ?? '',
+            'longitude': _locationInfo['longitude']?.toString() ?? '',
+            'distance': _locationInfo['distance']?.toString() ?? '',
+            'public_ip': _publicIp,
+            'checkin_method': checkinMethod,
+          });
 
       if (res['success'] == true) {
         _isCheckedIn = true;
@@ -514,7 +546,9 @@ class _CheckinScreenState extends State<CheckinScreen>
             SnackBar(
               backgroundColor: const Color(0xFF10B981),
               behavior: SnackBarBehavior.floating,
-              content: Text('⚡ Đã tự động cập nhật IP văn phòng mới: ${res['new_ip'] ?? _publicIp}'),
+              content: Text(
+                '⚡ Đã tự động cập nhật IP văn phòng mới: ${res['new_ip'] ?? _publicIp}',
+              ),
             ),
           );
         }
@@ -528,7 +562,8 @@ class _CheckinScreenState extends State<CheckinScreen>
           _wifiSubText = 'Lúc ${res['checkin_time']}';
           return true;
         } else {
-          _showErrorPopup(res['error'] ?? 'Lỗi không xác định');
+          _lastCheckinError = res['error'] ?? 'Lỗi không xác định';
+          if (showErrorPopup) _showErrorPopup(_lastCheckinError);
           return false;
         }
       }
@@ -538,48 +573,52 @@ class _CheckinScreenState extends State<CheckinScreen>
         _wifiStatusText = 'Đã điểm danh hôm nay';
         return true;
       } else {
-        _showErrorPopup(e.toString());
+        _lastCheckinError = e.toString();
+        if (showErrorPopup) _showErrorPopup(_lastCheckinError);
         return false;
       }
     }
   }
 
-
-  Future<bool> _performCheckinWithLocation(
-    Future<Map<String, dynamic>> locationFuture,
-  ) async {
+  Future<bool> _performTarotCheckin() async {
     if (_isCheckedIn) return true;
 
-    // Nếu location trong state chưa có hoặc chưa hợp lệ, đợi locationFuture
-    if (!_isLocationValid || _locationInfo.isEmpty) {
-      final locInfo = await locationFuture;
-      if (!mounted) return false;
-      _locationInfo = locInfo;
-      _isLocationValid = locInfo['available'] == true && locInfo['in_range'] == true;
+    _lastCheckinError = '';
+    if (!await _ensureLoggedIn()) {
+      _lastCheckinError = 'Bạn cần đăng nhập để hoàn tất check-in.';
+      return false;
     }
+    if (!mounted) return false;
 
-    if (_publicIp.isEmpty) {
-      _publicIp = await PublicIpService.getPublicIp();
-    }
+    setState(() => _isFetchingLocation = true);
 
-    return _performCheckin();
+    final locationFuture = LocationService.getInfo(_settings);
+    final ipFuture = _publicIp.isEmpty
+        ? PublicIpService.getPublicIp()
+        : Future<String>.value(_publicIp);
+
+    final locInfo = await locationFuture;
+    final publicIp = await ipFuture;
+    if (!mounted) return false;
+
+    setState(() {
+      _locationInfo
+        ..clear()
+        ..addAll(locInfo);
+      _isLocationValid =
+          locInfo['available'] == true && locInfo['in_range'] == true;
+      _locationPermissionDenied = locInfo['permission_denied'] == true;
+      _publicIp = publicIp;
+      _isFetchingLocation = false;
+    });
+
+    return _performCheckin(showErrorPopup: false);
   }
 
-  void _showCheckinResultSheet() {
+  Future<void> _showCheckinResultSheet(Map<String, dynamic> tarotCard) async {
     if (!mounted) return;
 
-    // ══════════════════════════════════════════════════
-    // SAFARI/CHROME GESTURE FIX:
-    // Khởi động GPS NGAY TẠI ĐÂY trước bất kỳ thứ gì khác.
-    // showGeneralDialog() có thể phá vỡ User Gesture context
-    // vì nó schedule frame qua WidgetsBinding.
-    // Nếu getInfo() được gọi bên TRONG pageBuilder thì Safari
-    // và Chrome đã mất "User Gesture Token" → không bao giờ hiện popup!
-    // ══════════════════════════════════════════════════
-    final Future<Map<String, dynamic>> locationFuture =
-        LocationService.getInfo(_settings);
-
-    showGeneralDialog(
+    await showGeneralDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       barrierDismissible: true,
@@ -591,14 +630,16 @@ class _CheckinScreenState extends State<CheckinScreen>
           child: Align(
             alignment: Alignment.bottomCenter,
             child: Padding(
-              padding: const EdgeInsets.only(bottom: 48.0, left: 16, right: 16),
+              padding: const EdgeInsets.only(bottom: 24.0, left: 16, right: 16),
               child: Material(
                 color: Colors.transparent,
                 child: CheckinBottomSheet(
-                  checkinFuture: _performCheckinWithLocation(locationFuture),
+                  checkinTask: _performTarotCheckin,
                   locationInfo: _locationInfo,
-                  isAlreadyCheckedIn: false,
+                  isAlreadyCheckedIn: _isCheckedIn,
                   checkinTime: _wifiSubText,
+                  tarotCard: tarotCard,
+                  errorMessage: () => _lastCheckinError,
                 ),
               ),
             ),
@@ -611,16 +652,11 @@ class _CheckinScreenState extends State<CheckinScreen>
             begin: const Offset(0, 1),
             end: Offset.zero,
           ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
-          child: FadeTransition(
-            opacity: anim1,
-
-            child: child,
-          ),
+          child: FadeTransition(opacity: anim1, child: child),
         );
       },
-    ).then((_) {
-      if (mounted) setState(() {});
-    });
+    );
+    if (mounted) setState(() {});
   }
 
   // Tải nền tĩnh lặng để có sẵn data trước khi mở Tab
@@ -652,8 +688,10 @@ class _CheckinScreenState extends State<CheckinScreen>
       },
       transitionBuilder: (context, anim1, anim2, child) {
         return SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
           child: FadeTransition(opacity: anim1, child: child),
         );
       },
@@ -668,11 +706,9 @@ class _CheckinScreenState extends State<CheckinScreen>
     if (!await _ensureLoggedIn()) return;
     if (!mounted) return;
 
-    final rawQr = await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => const QrScannerScreen(),
-      ),
-    );
+    final rawQr = await Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (context) => const QrScannerScreen()));
 
     if (rawQr == 'ISSUE_QR') {
       _showQrIssuerSheet();
@@ -703,7 +739,7 @@ class _CheckinScreenState extends State<CheckinScreen>
               child: Material(
                 color: Colors.transparent,
                 child: CheckinBottomSheet(
-                  checkinFuture: _performQrCheckin(rawQr),
+                  checkinTask: () => _performQrCheckin(rawQr),
                   locationInfo: _locationInfo,
                   isAlreadyCheckedIn: false,
                   checkinTime: _wifiSubText,
@@ -719,10 +755,7 @@ class _CheckinScreenState extends State<CheckinScreen>
             begin: const Offset(0, 1),
             end: Offset.zero,
           ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
-          child: FadeTransition(
-            opacity: anim1,
-            child: child,
-          ),
+          child: FadeTransition(opacity: anim1, child: child),
         );
       },
     ).then((_) {
@@ -737,7 +770,9 @@ class _CheckinScreenState extends State<CheckinScreen>
         ? _locationInfo
         : await LocationService.getInfo(_settings);
     if (locInfo['available'] != true || locInfo['in_range'] != true) {
-      throw Exception('Bạn phải ở trong phạm vi công ty và cấp quyền vị trí để quét QR.');
+      throw Exception(
+        'Bạn phải ở trong phạm vi công ty và cấp quyền vị trí để quét QR.',
+      );
     }
 
     final publicIp = _publicIp.isNotEmpty
@@ -762,7 +797,8 @@ class _CheckinScreenState extends State<CheckinScreen>
         _wifiStatusText = result['already_checked_in'] == true
             ? 'Đã điểm danh hôm nay'
             : 'Đã hoàn tất điểm danh';
-        _wifiSubText = result['checkin']?['message'] ?? 'Check-in QR thành công.';
+        _wifiSubText =
+            result['checkin']?['message'] ?? 'Check-in QR thành công.';
       });
       _loadHistoryBg();
       _loadRankingBg();
@@ -799,8 +835,10 @@ class _CheckinScreenState extends State<CheckinScreen>
       },
       transitionBuilder: (context, anim1, anim2, child) {
         return SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
           child: FadeTransition(opacity: anim1, child: child),
         );
       },
@@ -929,6 +967,7 @@ class _CheckinScreenState extends State<CheckinScreen>
       },
     );
   }
+
   Future<void> _loadHistoryBg() async {
     if (_user == null) return;
     try {
@@ -1005,10 +1044,7 @@ class _CheckinScreenState extends State<CheckinScreen>
             begin: const Offset(0, 1),
             end: Offset.zero,
           ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
-          child: FadeTransition(
-            opacity: anim1,
-            child: child,
-          ),
+          child: FadeTransition(opacity: anim1, child: child),
         );
       },
     );
@@ -1020,14 +1056,14 @@ class _CheckinScreenState extends State<CheckinScreen>
     } catch (e) {
       await GoogleSignIn.instance.signOut();
     }
-    
+
     // Xoá cache để tránh rò rỉ dữ liệu cross-account
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove('cached_history');
       await prefs.remove('cached_ranking');
     } catch (_) {}
-    
+
     setState(() {
       _user = null;
       _isCheckedIn = false;
@@ -1092,7 +1128,9 @@ class _CheckinScreenState extends State<CheckinScreen>
   void _showAdminIpSyncDialog() {
     if (_user == null || _user!['role'] != 'admin') return;
 
-    final currentOfficeIp = (_settings['office_public_ip'] ?? '').toString().trim();
+    final currentOfficeIp = (_settings['office_public_ip'] ?? '')
+        .toString()
+        .trim();
     bool isSyncing = false;
 
     showGeneralDialog(
@@ -1114,7 +1152,11 @@ class _CheckinScreenState extends State<CheckinScreen>
                   builder: (dialogContext, setDialogState) {
                     final isMatched = _isCurrentIpMatched;
                     return Container(
-                      width: math.min(MediaQuery.of(context).size.width - 32, 440),
+                      width: math.min(
+                        MediaQuery.of(context).size.width - 32,
+                        440,
+                      ),
+                      height: MediaQuery.of(context).size.height * 0.82,
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
                       decoration: BoxDecoration(
                         color: Colors.white,
@@ -1128,7 +1170,6 @@ class _CheckinScreenState extends State<CheckinScreen>
                         ],
                       ),
                       child: Column(
-                        mainAxisSize: MainAxisSize.min,
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           // Header: Tiêu đề + nút đóng (giống hệt LeaveRequestSheet)
@@ -1146,7 +1187,11 @@ class _CheckinScreenState extends State<CheckinScreen>
                               ),
                               IconButton(
                                 onPressed: () => Navigator.of(context).pop(),
-                                icon: const Icon(Icons.close_rounded, size: 22, color: Color(0xFF6B7280)),
+                                icon: const Icon(
+                                  Icons.close_rounded,
+                                  size: 22,
+                                  color: Color(0xFF6B7280),
+                                ),
                               ),
                             ],
                           ),
@@ -1159,13 +1204,16 @@ class _CheckinScreenState extends State<CheckinScreen>
                             decoration: BoxDecoration(
                               color: const Color(0xFFF9FAFB),
                               borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
+                              border: Border.all(
+                                color: const Color(0xFFE5E7EB),
+                              ),
                             ),
                             child: Row(
                               children: [
                                 Expanded(
                                   child: Column(
-                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
                                     children: [
                                       const Text(
                                         'IP mạng hiện tại của thiết bị:',
@@ -1177,7 +1225,9 @@ class _CheckinScreenState extends State<CheckinScreen>
                                       ),
                                       const SizedBox(height: 4),
                                       SelectableText(
-                                        _publicIp.isNotEmpty ? _publicIp : 'Đang phát hiện...',
+                                        _publicIp.isNotEmpty
+                                            ? _publicIp
+                                            : 'Đang phát hiện...',
                                         style: const TextStyle(
                                           fontSize: 17,
                                           fontWeight: FontWeight.w800,
@@ -1189,12 +1239,19 @@ class _CheckinScreenState extends State<CheckinScreen>
                                   ),
                                 ),
                                 Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 10,
+                                    vertical: 5,
+                                  ),
                                   decoration: BoxDecoration(
-                                    color: isMatched ? const Color(0xFFECFDF5) : const Color(0xFFFEF2F2),
+                                    color: isMatched
+                                        ? const Color(0xFFECFDF5)
+                                        : const Color(0xFFFEF2F2),
                                     borderRadius: BorderRadius.circular(12),
                                     border: Border.all(
-                                      color: isMatched ? const Color(0xFFA7F3D0) : const Color(0xFFFECACA),
+                                      color: isMatched
+                                          ? const Color(0xFFA7F3D0)
+                                          : const Color(0xFFFECACA),
                                     ),
                                   ),
                                   child: Row(
@@ -1204,7 +1261,9 @@ class _CheckinScreenState extends State<CheckinScreen>
                                         width: 7,
                                         height: 7,
                                         decoration: BoxDecoration(
-                                          color: isMatched ? const Color(0xFF10B981) : const Color(0xFFEF4444),
+                                          color: isMatched
+                                              ? const Color(0xFF10B981)
+                                              : const Color(0xFFEF4444),
                                           shape: BoxShape.circle,
                                         ),
                                       ),
@@ -1214,7 +1273,9 @@ class _CheckinScreenState extends State<CheckinScreen>
                                         style: TextStyle(
                                           fontSize: 12,
                                           fontWeight: FontWeight.w700,
-                                          color: isMatched ? const Color(0xFF047857) : const Color(0xFFB91C1C),
+                                          color: isMatched
+                                              ? const Color(0xFF047857)
+                                              : const Color(0xFFB91C1C),
                                         ),
                                       ),
                                     ],
@@ -1226,37 +1287,46 @@ class _CheckinScreenState extends State<CheckinScreen>
                           const SizedBox(height: 10),
 
                           // Box 2: Danh sách IP công ty đang lưu trong Settings
-                          Container(
-                            width: double.infinity,
-                            padding: const EdgeInsets.all(14),
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF9FAFB),
-                              borderRadius: BorderRadius.circular(16),
-                              border: Border.all(color: const Color(0xFFE5E7EB)),
-                            ),
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                const Text(
-                                  'Danh sách IP công ty đang lưu (Settings):',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Color(0xFF6B7280),
-                                    fontWeight: FontWeight.w500,
+                          Expanded(
+                            child: SingleChildScrollView(
+                              physics: const BouncingScrollPhysics(),
+                              child: Container(
+                                width: double.infinity,
+                                padding: const EdgeInsets.all(14),
+                                decoration: BoxDecoration(
+                                  color: const Color(0xFFF9FAFB),
+                                  borderRadius: BorderRadius.circular(16),
+                                  border: Border.all(
+                                    color: const Color(0xFFE5E7EB),
                                   ),
                                 ),
-                                const SizedBox(height: 5),
-                                SelectableText(
-                                  currentOfficeIp.isNotEmpty ? currentOfficeIp : '(Chưa cấu hình)',
-                                  style: const TextStyle(
-                                    fontSize: 13,
-                                    fontWeight: FontWeight.w600,
-                                    color: Color(0xFF374151),
-                                    fontFamily: 'monospace',
-                                    height: 1.4,
-                                  ),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Danh sách IP công ty đang lưu (Settings):',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Color(0xFF6B7280),
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 5),
+                                    SelectableText(
+                                      currentOfficeIp.isNotEmpty
+                                          ? currentOfficeIp
+                                          : '(Chưa cấu hình)',
+                                      style: const TextStyle(
+                                        fontSize: 13,
+                                        fontWeight: FontWeight.w600,
+                                        color: Color(0xFF374151),
+                                        fontFamily: 'monospace',
+                                        height: 1.4,
+                                      ),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
                           ),
                           const SizedBox(height: 18),
@@ -1271,48 +1341,82 @@ class _CheckinScreenState extends State<CheckinScreen>
                                   : () async {
                                       setDialogState(() => isSyncing = true);
                                       try {
-                                        final res = await ApiService.updateOfficeIp(
-                                          adminEmail: _user!['email'],
-                                          newIp: _publicIp,
-                                          latitude: _locationInfo['latitude'] is num
-                                              ? (_locationInfo['latitude'] as num).toDouble()
-                                              : null,
-                                          longitude: _locationInfo['longitude'] is num
-                                              ? (_locationInfo['longitude'] as num).toDouble()
-                                              : null,
-                                        );
+                                        final res =
+                                            await ApiService.updateOfficeIp(
+                                              adminEmail: _user!['email'],
+                                              newIp: _publicIp,
+                                              latitude:
+                                                  _locationInfo['latitude']
+                                                      is num
+                                                  ? (_locationInfo['latitude']
+                                                            as num)
+                                                        .toDouble()
+                                                  : null,
+                                              longitude:
+                                                  _locationInfo['longitude']
+                                                      is num
+                                                  ? (_locationInfo['longitude']
+                                                            as num)
+                                                        .toDouble()
+                                                  : null,
+                                            );
                                         if (res['success'] == true) {
-                                          final allIps = res['all_ips']?.toString();
-                                          if (allIps != null && allIps.isNotEmpty) {
-                                            _settings['office_public_ip'] = allIps;
-                                          } else {
-                                            final curr = (_settings['office_public_ip'] ?? '').toString().trim();
+                                          final allIps = res['all_ips']
+                                              ?.toString();
+                                          if (allIps != null &&
+                                              allIps.isNotEmpty) {
                                             _settings['office_public_ip'] =
-                                                curr.isEmpty ? _publicIp : '$curr, $_publicIp';
+                                                allIps;
+                                          } else {
+                                            final curr =
+                                                (_settings['office_public_ip'] ??
+                                                        '')
+                                                    .toString()
+                                                    .trim();
+                                            _settings['office_public_ip'] =
+                                                curr.isEmpty
+                                                ? _publicIp
+                                                : '$curr, $_publicIp';
                                           }
-                                          final prefs = await SharedPreferences.getInstance();
-                                          await prefs.setString('cached_settings', jsonEncode(_settings));
+                                          final prefs =
+                                              await SharedPreferences.getInstance();
+                                          await prefs.setString(
+                                            'cached_settings',
+                                            jsonEncode(_settings),
+                                          );
                                           if (mounted) {
                                             setState(() {});
                                             Navigator.of(context).pop();
-                                            ScaffoldMessenger.of(context).showSnackBar(
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
                                               SnackBar(
-                                                backgroundColor: const Color(0xFF10B981),
-                                                behavior: SnackBarBehavior.floating,
-                                                content: Text('🎉 Đã thêm IP ($_publicIp) vào danh sách văn phòng!'),
+                                                backgroundColor: const Color(
+                                                  0xFF10B981,
+                                                ),
+                                                behavior:
+                                                    SnackBarBehavior.floating,
+                                                content: Text(
+                                                  '🎉 Đã thêm IP ($_publicIp) vào danh sách văn phòng!',
+                                                ),
                                               ),
                                             );
                                           }
                                         } else {
-                                          throw Exception(res['error'] ?? 'Thêm IP thất bại');
+                                          throw Exception(
+                                            res['error'] ?? 'Thêm IP thất bại',
+                                          );
                                         }
                                       } catch (err) {
                                         setDialogState(() => isSyncing = false);
                                         if (mounted) {
-                                          ScaffoldMessenger.of(context).showSnackBar(
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
                                             SnackBar(
                                               backgroundColor: Colors.redAccent,
-                                              behavior: SnackBarBehavior.floating,
+                                              behavior:
+                                                  SnackBarBehavior.floating,
                                               content: Text('Lỗi: $err'),
                                             ),
                                           );
@@ -1326,19 +1430,28 @@ class _CheckinScreenState extends State<CheckinScreen>
                                   borderRadius: BorderRadius.circular(16),
                                 ),
                                 elevation: 0,
-                                disabledBackgroundColor: const Color(0xFFE5E7EB),
+                                disabledBackgroundColor: const Color(
+                                  0xFFE5E7EB,
+                                ),
                               ),
                               child: isSyncing
                                   ? const SizedBox(
                                       width: 20,
                                       height: 20,
-                                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                                      child: CircularProgressIndicator(
+                                        strokeWidth: 2,
+                                        color: Colors.white,
+                                      ),
                                     )
                                   : Row(
-                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      mainAxisAlignment:
+                                          MainAxisAlignment.center,
                                       children: [
                                         Icon(
-                                          isMatched ? Icons.check_circle_outline_rounded : Icons.add_rounded,
+                                          isMatched
+                                              ? Icons
+                                                    .check_circle_outline_rounded
+                                              : Icons.add_rounded,
                                           size: 18,
                                         ),
                                         const SizedBox(width: 8),
@@ -1346,7 +1459,10 @@ class _CheckinScreenState extends State<CheckinScreen>
                                           isMatched
                                               ? 'IP này đã có (Bấm để đồng bộ lại)'
                                               : 'Thêm IP này vào danh sách công ty',
-                                          style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+                                          style: const TextStyle(
+                                            fontWeight: FontWeight.w700,
+                                            fontSize: 14,
+                                          ),
                                         ),
                                       ],
                                     ),
@@ -1364,8 +1480,10 @@ class _CheckinScreenState extends State<CheckinScreen>
       },
       transitionBuilder: (context, anim1, anim2, child) {
         return SlideTransition(
-          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
           child: FadeTransition(opacity: anim1, child: child),
         );
       },
@@ -1393,8 +1511,12 @@ class _CheckinScreenState extends State<CheckinScreen>
   // TOP BAR (Profile Pill)
   // ═══════════════════════════════════════════════
   Widget _buildTopBar() {
+    final topPadding = (MediaQuery.sizeOf(context).height * .08).clamp(
+      48.0,
+      88.0,
+    );
     return Padding(
-      padding: const EdgeInsets.only(top: 24, left: 24, right: 24),
+      padding: EdgeInsets.only(top: topPadding, left: 24, right: 24),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
@@ -1498,8 +1620,8 @@ class _CheckinScreenState extends State<CheckinScreen>
     final String statusText = _isCheckedIn
         ? "Đã điểm danh hôm nay"
         : (isEarly
-              ? "🎉 Đang sớm checkin luôn đi"
-              : "🔥 Muộn rồi checkin nhanh lên");
+              ? "Đang sớm, rút 1 lá check-in hôm nay"
+              : "Muộn rồi, rút 1 lá check-in ngay thôi");
     final Color statusBg = _isCheckedIn
         ? const Color(0xFFE8F5E9)
         : (isEarly ? const Color(0xFFDCF8F3) : const Color(0xFFFDECEC));
@@ -1507,50 +1629,33 @@ class _CheckinScreenState extends State<CheckinScreen>
         ? const Color(0xFF2E7D32)
         : (isEarly ? const Color(0xFF141517) : const Color(0xFFC62828));
 
-    return Padding(
+    return Column(
       key: key,
-      padding: const EdgeInsets.only(bottom: 84), // Dịch toàn bộ cụm lên trên thêm 24px nữa
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-        // Center Image
-        Container(
-          width: 140,
-          height: 140,
-          child: Image.asset(
-            'assets/images/img_calendar.png',
-            width: 140,
-            height: 140,
-            fit: BoxFit.contain,
-          ),
-        ),
-        const SizedBox(height: 32),
-        // Date
+      children: [
+        const SizedBox(height: 18),
         Text(
           _getFormattedDate(),
           style: const TextStyle(
-            fontSize: 14,
+            fontSize: 13,
             fontWeight: FontWeight.w400,
             color: Color(0xFF4B5563),
             fontFamily: 'Inter',
           ),
         ),
-        const SizedBox(height: 8),
-        // Time
+        const SizedBox(height: 3),
         Text(
           _getFormattedTime(),
           style: const TextStyle(
-            fontSize: 52, // Tăng kích cỡ chữ đồng hồ lên 52px
-            fontWeight: FontWeight.w700, // Làm chữ đậm thêm một chút
+            fontSize: 42,
+            fontWeight: FontWeight.w700,
             color: Color(0xFF1F2937),
             fontFamily: 'Inter',
-            height: 1.1,
+            height: 1.05,
           ),
         ),
-        const SizedBox(height: 24),
-        // Status Pill
+        const SizedBox(height: 9),
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: statusBg,
             borderRadius: BorderRadius.circular(40),
@@ -1558,155 +1663,29 @@ class _CheckinScreenState extends State<CheckinScreen>
           child: Text(
             statusText,
             style: TextStyle(
-              fontSize: 14,
+              fontSize: 13,
               fontWeight: FontWeight.w500,
               color: statusColor,
               fontFamily: 'Inter',
             ),
           ),
         ),
+        const SizedBox(height: 4),
+        Expanded(
+          child: LuneTarotCheckin(
+            onCardSelected: _onLuneCardSelected,
+            checkinStatus: _tarotCheckinStatus,
+          ),
+        ),
       ],
-    ),
-  );
-}
+    );
+  }
 
   Widget _buildFooter() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 32, left: 24, right: 24),
       child: Column(
         children: [
-          Center(
-            child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: LayoutBuilder(
-                builder: (context, constraints) {
-                  const double thumbSize = 52.0;
-                  final double maxDrag = constraints.maxWidth - thumbSize - 10;
-
-                  return AnimatedBuilder(
-                    animation: _springController,
-                    builder: (context, child) {
-                      final double currentOffset = _isDragging
-                          ? _dragOffset
-                          : (_springAnimation?.value ?? _dragOffset);
-                      
-                      final double visualOffset = currentOffset.clamp(0.0, maxDrag);
-
-                      return Container(
-                        height: 64,
-                        padding: const EdgeInsets.all(5),
-                        decoration: BoxDecoration(
-                          color: Colors.white,
-                          borderRadius: BorderRadius.circular(32),
-                          border: Border.all(color: const Color(0xFFE5E7EB), width: 1),
-                          boxShadow: [
-                            BoxShadow(
-                              color: Colors.black.withOpacity(0.05),
-                              blurRadius: 10,
-                              offset: const Offset(0, 4),
-                            ),
-                          ],
-                        ),
-                        child: Stack(
-                          alignment: Alignment.centerLeft,
-                          children: [
-                            Container(
-                              width: thumbSize + visualOffset,
-                              height: 52,
-                              decoration: BoxDecoration(
-                                color: const Color(0xFFDCF8F3),
-                                borderRadius: BorderRadius.circular(26),
-                              ),
-                            ),
-                            Center(
-                              child: Text(
-                                'Vuốt sang phải để check-in',
-                                style: TextStyle(
-                                  fontSize: 16,
-                                  fontWeight: FontWeight.w600,
-                                  color: visualOffset > maxDrag * 0.5
-                                      ? const Color(0xFF1F2937).withOpacity((1 - (visualOffset / maxDrag)).clamp(0.0, 1.0))
-                                      : const Color(0xFF1F2937),
-                                  fontFamily: 'Inter',
-                                ),
-                              ),
-                            ),
-                            Positioned(
-                              left: visualOffset,
-                              child: GestureDetector(
-                                onHorizontalDragStart: (details) {
-                                  if (_isCheckingIn || _isLoggingIn) return;
-                                  _springController.stop();
-                                  setState(() => _isDragging = true);
-                                },
-                                onHorizontalDragUpdate: (details) {
-                                  if (_isCheckingIn || _isLoggingIn) return;
-                                  setState(() {
-                                    _dragOffset += details.primaryDelta!;
-                                    if (_dragOffset < 0) _dragOffset = 0;
-                                    if (_dragOffset > maxDrag + 20) _dragOffset = maxDrag + 20;
-                                  });
-                                },
-                                onHorizontalDragEnd: (details) {
-                                  if (_isCheckingIn || _isLoggingIn) return;
-                                  if (_dragOffset > maxDrag * 0.75 ||
-                                      (details.primaryVelocity != null &&
-                                          details.primaryVelocity! > 300)) {
-                                    setState(() => _dragOffset = maxDrag);
-                                    _showCheckinResultSheet();
-                                    Future.delayed(const Duration(milliseconds: 500), () {
-                                      if (mounted) _executeSpringBack();
-                                    });
-                                  } else {
-                                    _executeSpringBack();
-                                  }
-                                },
-                                onHorizontalDragCancel: () {
-                                  if (_isCheckingIn || _isLoggingIn) return;
-                                  _executeSpringBack();
-                                },
-                                child: Container(
-                                  width: thumbSize,
-                                  height: thumbSize,
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFF000000),
-                                    borderRadius: BorderRadius.circular(26),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.2),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
-                                      ),
-                                    ],
-                                  ),
-                                  child: _isCheckingIn || _isLoggingIn
-                                      ? const Padding(
-                                          padding: EdgeInsets.all(16.0),
-                                          child: CircularProgressIndicator(
-                                            color: Colors.white,
-                                            strokeWidth: 2,
-                                          ),
-                                        )
-                                      : const Center(
-                                          child: Icon(
-                                            Icons.keyboard_arrow_right_rounded,
-                                            color: Colors.white,
-                                            size: 32,
-                                          ),
-                                        ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-            ),
-          ),
-          const SizedBox(height: 24),
           _buildQuickActions(),
           const SizedBox(height: 12),
           RichText(
@@ -1733,7 +1712,6 @@ class _CheckinScreenState extends State<CheckinScreen>
       ),
     );
   }
-
 
   Widget _buildQuickActions() {
     return Row(
@@ -1764,16 +1742,29 @@ class _CheckinScreenState extends State<CheckinScreen>
       ],
     );
   }
-  void _executeSpringBack() {
-    final startOffset = _dragOffset;
-    setState(() => _isDragging = false);
-    _springAnimation = Tween<double>(begin: startOffset, end: 0.0).animate(
-      CurvedAnimation(parent: _springController, curve: Curves.easeOutBack),
-    );
-    _springController.forward(from: 0.0);
+
+  Future<void> _onLuneCardSelected(Map<String, dynamic> _card) async {
+    if (_isTarotDrawing || _isCheckingIn || _isLoggingIn) return;
+
+    setState(() {
+      _isTarotDrawing = true;
+      _isCheckingIn = true;
+    });
+
+    try {
+      await _showCheckinResultSheet(_card);
+    } finally {
+      if (mounted) {
+        _tarotCheckinStatus.value = {'type': 'lune-command', 'command': 'next'};
+        setState(() {
+          _isTarotDrawing = false;
+          _isCheckingIn = false;
+          _isFetchingLocation = false;
+        });
+      }
+    }
   }
 }
-
 
 class _QuickActionButton extends StatelessWidget {
   final IconData icon;
@@ -1854,6 +1845,7 @@ class _QuickActionButton extends StatelessWidget {
     );
   }
 }
+
 class _HistoryCardAnimated extends StatefulWidget {
   final dynamic record;
   final bool isLate;
@@ -1875,14 +1867,18 @@ class _HistoryCardAnimated extends StatefulWidget {
   State<_HistoryCardAnimated> createState() => _HistoryCardAnimatedState();
 }
 
-class _HistoryCardAnimatedState extends State<_HistoryCardAnimated> with SingleTickerProviderStateMixin {
+class _HistoryCardAnimatedState extends State<_HistoryCardAnimated>
+    with SingleTickerProviderStateMixin {
   bool _isPressed = false;
   late AnimationController _pulseCtrl;
 
   @override
   void initState() {
     super.initState();
-    _pulseCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _pulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
     if (widget.isFirst || widget.isMaxLate) {
       Future.delayed(widget.animDelay + const Duration(milliseconds: 300), () {
         if (mounted) {
@@ -1920,10 +1916,12 @@ class _HistoryCardAnimatedState extends State<_HistoryCardAnimated> with SingleT
                 color: Colors.black.withOpacity(0.04),
                 blurRadius: 12,
                 offset: const Offset(0, 4),
-              )
+              ),
           ],
           border: Border.all(
-            color: widget.isFirst ? const Color(0xFFF3F4F6) : Colors.transparent,
+            color: widget.isFirst
+                ? const Color(0xFFF3F4F6)
+                : Colors.transparent,
             width: 1,
           ),
         ),
@@ -1935,7 +1933,10 @@ class _HistoryCardAnimatedState extends State<_HistoryCardAnimated> with SingleT
               children: [
                 Text(
                   widget.record['date'] ?? '',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 if (widget.isLate)
@@ -1950,19 +1951,31 @@ class _HistoryCardAnimatedState extends State<_HistoryCardAnimated> with SingleT
                     },
                     child: Row(
                       children: [
-                        const Text('Trễ ', style: TextStyle(fontSize: 13, color: Colors.orange)),
+                        const Text(
+                          'Trễ ',
+                          style: TextStyle(fontSize: 13, color: Colors.orange),
+                        ),
                         CountUpText(
                           value: widget.lateMin,
                           suffix: ' phút',
-                          delay: widget.animDelay + const Duration(milliseconds: 180),
+                          delay:
+                              widget.animDelay +
+                              const Duration(milliseconds: 180),
                           duration: const Duration(milliseconds: 600),
-                          style: const TextStyle(fontSize: 13, color: Colors.orange, fontWeight: FontWeight.w600),
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: Colors.orange,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ],
                     ),
                   )
                 else
-                  const Text('Đúng giờ', style: TextStyle(fontSize: 13, color: Colors.green)),
+                  const Text(
+                    'Đúng giờ',
+                    style: TextStyle(fontSize: 13, color: Colors.green),
+                  ),
               ],
             ),
             TweenAnimationBuilder<double>(
@@ -1983,7 +1996,10 @@ class _HistoryCardAnimatedState extends State<_HistoryCardAnimated> with SingleT
                   final t = widget.record['checkin_time']?.toString() ?? '';
                   return t.length >= 5 ? t.substring(0, 5) : t;
                 }(),
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 18,
+                ),
               ),
             ),
           ],
@@ -2018,7 +2034,8 @@ class _RankingCardAnimated extends StatefulWidget {
   State<_RankingCardAnimated> createState() => _RankingCardAnimatedState();
 }
 
-class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerProviderStateMixin {
+class _RankingCardAnimatedState extends State<_RankingCardAnimated>
+    with TickerProviderStateMixin {
   bool _isPressed = false;
   late AnimationController _breatheCtrl;
   late AnimationController _medalCtrl;
@@ -2026,12 +2043,18 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
   @override
   void initState() {
     super.initState();
-    _breatheCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 1500));
+    _breatheCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1500),
+    );
     if (widget.isCurrentUser) {
       _breatheCtrl.repeat(reverse: true);
     }
 
-    _medalCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 800));
+    _medalCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 800),
+    );
     if (widget.index < 3) {
       Future.delayed(widget.animDelay + const Duration(milliseconds: 300), () {
         if (mounted) _medalCtrl.forward();
@@ -2068,21 +2091,25 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             decoration: BoxDecoration(
               color: widget.isCurrentUser
-                  ? Color.lerp(const Color(0xFFFFF7ED), const Color(0xFFFEF3C7), breathe)
+                  ? Color.lerp(
+                      const Color(0xFFFFF7ED),
+                      const Color(0xFFFEF3C7),
+                      breathe,
+                    )
                   : Colors.white,
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
                 color: widget.isCurrentUser
                     ? const Color(0xFFFBBF24)
                     : widget.isTop1
-                        ? const Color(0xFFFFE4E1)
-                        : const Color(0xFFF3F4F6),
+                    ? const Color(0xFFFFE4E1)
+                    : const Color(0xFFF3F4F6),
                 width: widget.isCurrentUser || widget.isTop1 ? 1.5 : 1,
               ),
               boxShadow: [
                 BoxShadow(
-                  color: widget.isCurrentUser 
-                      ? const Color(0xFFFBBF24).withOpacity(0.1 + breathe * 0.1) 
+                  color: widget.isCurrentUser
+                      ? const Color(0xFFFBBF24).withOpacity(0.1 + breathe * 0.1)
                       : Colors.black.withOpacity(0.04),
                   blurRadius: widget.isCurrentUser ? 12 : 8,
                   offset: const Offset(0, 2),
@@ -2100,15 +2127,26 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
               child: Center(
                 child: hasMedal
                     ? AnimatedBuilder(
-                        animation: CurvedAnimation(parent: _medalCtrl, curve: Curves.elasticOut),
+                        animation: CurvedAnimation(
+                          parent: _medalCtrl,
+                          curve: Curves.elasticOut,
+                        ),
                         builder: (context, child) {
-                          final val = _medalCtrl.value == 0 ? 0.0 : CurvedAnimation(parent: _medalCtrl, curve: Curves.elasticOut).value;
+                          final val = _medalCtrl.value == 0
+                              ? 0.0
+                              : CurvedAnimation(
+                                  parent: _medalCtrl,
+                                  curve: Curves.elasticOut,
+                                ).value;
                           return Transform.scale(
                             scale: 0.5 + (0.5 * val),
                             child: child,
                           );
                         },
-                        child: Text(medals[widget.index], style: const TextStyle(fontSize: 20)),
+                        child: Text(
+                          medals[widget.index],
+                          style: const TextStyle(fontSize: 20),
+                        ),
                       )
                     : Text(
                         '${widget.index + 1}',
@@ -2131,8 +2169,13 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
               backgroundColor: const Color(0xFFE5E7EB),
               child: (widget.record['avatar'] ?? '').isEmpty
                   ? Text(
-                      (widget.record['name'] ?? '?').substring(0, 1).toUpperCase(),
-                      style: const TextStyle(fontWeight: FontWeight.bold, color: Color(0xFF6B7280)),
+                      (widget.record['name'] ?? '?')
+                          .substring(0, 1)
+                          .toUpperCase(),
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF6B7280),
+                      ),
                     )
                   : null,
             ),
@@ -2158,7 +2201,10 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
                   const SizedBox(height: 2),
                   Text(
                     '${widget.onTimeDays} đúng giờ  •  ${widget.lateDays} muộn',
-                    style: const TextStyle(fontSize: 11, color: Color(0xFF9CA3AF)),
+                    style: const TextStyle(
+                      fontSize: 11,
+                      color: Color(0xFF9CA3AF),
+                    ),
                   ),
                 ],
               ),
@@ -2167,7 +2213,10 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
             // --- Late minutes badge ---
             if (widget.lateMinutes > 0)
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: widget.isTop1
                       ? const Color(0xFFFFE4E1)
@@ -2178,12 +2227,15 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
                   children: [
                     CountUpText(
                       value: widget.lateMinutes,
-                      delay: widget.animDelay + const Duration(milliseconds: 180),
+                      delay:
+                          widget.animDelay + const Duration(milliseconds: 180),
                       duration: const Duration(milliseconds: 800),
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: widget.isTop1 ? const Color(0xFFEF4444) : const Color(0xFFF97316),
+                        color: widget.isTop1
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFFF97316),
                       ),
                     ),
                     Text(
@@ -2191,7 +2243,9 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w700,
-                        color: widget.isTop1 ? const Color(0xFFEF4444) : const Color(0xFFF97316),
+                        color: widget.isTop1
+                            ? const Color(0xFFEF4444)
+                            : const Color(0xFFF97316),
                       ),
                     ),
                   ],
@@ -2199,7 +2253,10 @@ class _RankingCardAnimatedState extends State<_RankingCardAnimated> with TickerP
               )
             else
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 5,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFF0FDF4),
                   borderRadius: BorderRadius.circular(20),
@@ -2238,28 +2295,42 @@ class _StatsPopup extends StatefulWidget {
   final VoidCallback onRefreshData;
 
   const _StatsPopup({
-    required this.user, required this.historyRecords, required this.rankingList,
-    required this.isLoadingHistory, required this.isLoadingRanking,
-    required this.onClose, required this.onLoadHistory, required this.onLoadHistoryBg,
-    required this.onLoadRanking, required this.onLoadRankingBg,
-    required this.onEnsureLoggedIn, required this.onRefreshData,
+    required this.user,
+    required this.historyRecords,
+    required this.rankingList,
+    required this.isLoadingHistory,
+    required this.isLoadingRanking,
+    required this.onClose,
+    required this.onLoadHistory,
+    required this.onLoadHistoryBg,
+    required this.onLoadRanking,
+    required this.onLoadRankingBg,
+    required this.onEnsureLoggedIn,
+    required this.onRefreshData,
   });
 
   @override
   State<_StatsPopup> createState() => _StatsPopupState();
 }
 
-class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin {
+class _StatsPopupState extends State<_StatsPopup>
+    with TickerProviderStateMixin {
   int _tab = 0;
-  late AnimationController _gradientCtrl;  // white → gradient
-  late AnimationController _headerCtrl;    // header slide-down
-  bool _listReady = false;                 // triggers list stagger
+  late AnimationController _gradientCtrl; // white → gradient
+  late AnimationController _headerCtrl; // header slide-down
+  bool _listReady = false; // triggers list stagger
 
   @override
   void initState() {
     super.initState();
-    _gradientCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 500));
-    _headerCtrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _gradientCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 500),
+    );
+    _headerCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
 
     // Phase sequence: card opens (handled by showGeneralDialog 400ms)
     // → gradient fades in → header slides down + list cascades
@@ -2293,14 +2364,21 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 24),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
-                  begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
                   colors: [
                     Color.lerp(Colors.white, const Color(0xFFF0FDF4), gt)!,
                     Color.lerp(Colors.white, const Color(0xFFFFF7ED), gt)!,
                   ],
                 ),
                 borderRadius: BorderRadius.circular(24),
-                boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.12 + 0.06 * gt), blurRadius: 30, offset: const Offset(0, 10))],
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.12 + 0.06 * gt),
+                    blurRadius: 30,
+                    offset: const Offset(0, 10),
+                  ),
+                ],
               ),
               child: child,
             );
@@ -2326,28 +2404,67 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
                         Expanded(
                           child: Container(
                             height: 36,
-                            decoration: BoxDecoration(color: const Color(0xFFE5E7EB), borderRadius: BorderRadius.circular(20)),
-                            child: LayoutBuilder(builder: (ctx, c) {
-                              final hw = c.maxWidth / 2;
-                              return Stack(children: [
-                                AnimatedPositioned(
-                                  duration: const Duration(milliseconds: 350), curve: Curves.easeInOutCubic,
-                                  left: _tab == 0 ? 0 : hw, top: 0, bottom: 0, width: hw,
-                                  child: Container(decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(20),
-                                    boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4, offset: Offset(0, 1))])),
-                                ),
-                                Row(children: [_tabBtn('Cá nhân', 0), _tabBtn('Xếp hạng', 1)]),
-                              ]);
-                            }),
+                            decoration: BoxDecoration(
+                              color: const Color(0xFFE5E7EB),
+                              borderRadius: BorderRadius.circular(20),
+                            ),
+                            child: LayoutBuilder(
+                              builder: (ctx, c) {
+                                final hw = c.maxWidth / 2;
+                                return Stack(
+                                  children: [
+                                    AnimatedPositioned(
+                                      duration: const Duration(
+                                        milliseconds: 350,
+                                      ),
+                                      curve: Curves.easeInOutCubic,
+                                      left: _tab == 0 ? 0 : hw,
+                                      top: 0,
+                                      bottom: 0,
+                                      width: hw,
+                                      child: Container(
+                                        decoration: BoxDecoration(
+                                          color: Colors.white,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                          boxShadow: const [
+                                            BoxShadow(
+                                              color: Colors.black12,
+                                              blurRadius: 4,
+                                              offset: Offset(0, 1),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    Row(
+                                      children: [
+                                        _tabBtn('Cá nhân', 0),
+                                        _tabBtn('Xếp hạng', 1),
+                                      ],
+                                    ),
+                                  ],
+                                );
+                              },
+                            ),
                           ),
                         ),
                         const SizedBox(width: 8),
                         GestureDetector(
                           onTap: widget.onClose,
                           child: Container(
-                            width: 36, height: 36,
-                            decoration: BoxDecoration(shape: BoxShape.circle, color: Colors.black.withOpacity(0.06)),
-                            child: const Icon(Icons.close_rounded, size: 18, color: Color(0xFF374151)),
+                            width: 36,
+                            height: 36,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.black.withOpacity(0.06),
+                            ),
+                            child: const Icon(
+                              Icons.close_rounded,
+                              size: 18,
+                              color: Color(0xFF374151),
+                            ),
                           ),
                         ),
                       ],
@@ -2362,10 +2479,17 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
                     child: AnimatedSwitcher(
                       duration: const Duration(milliseconds: 300),
                       switchInCurve: Curves.easeOutCubic,
-                      transitionBuilder: (child, anim) => FadeTransition(opacity: anim, child: child),
+                      transitionBuilder: (child, anim) =>
+                          FadeTransition(opacity: anim, child: child),
                       child: _tab == 0
-                          ? KeyedSubtree(key: const ValueKey(0), child: _buildHistoryContent())
-                          : KeyedSubtree(key: const ValueKey(1), child: _buildRankingContent()),
+                          ? KeyedSubtree(
+                              key: const ValueKey(0),
+                              child: _buildHistoryContent(),
+                            )
+                          : KeyedSubtree(
+                              key: const ValueKey(1),
+                              child: _buildRankingContent(),
+                            ),
                     ),
                   ),
                 ),
@@ -2373,16 +2497,27 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
                   child: SizedBox(
-                    width: double.infinity, height: 50,
+                    width: double.infinity,
+                    height: 50,
                     child: ElevatedButton(
                       onPressed: widget.onClose,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF000000),
                         foregroundColor: Colors.white,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(25)),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(25),
+                        ),
                         elevation: 0,
                       ),
-                      child: const Text('OK', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, fontFamily: 'Inter', letterSpacing: 0.5)),
+                      child: const Text(
+                        'OK',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w700,
+                          fontFamily: 'Inter',
+                          letterSpacing: 0.5,
+                        ),
+                      ),
                     ),
                   ),
                 ),
@@ -2395,31 +2530,54 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
   }
 
   Widget _tabBtn(String label, int idx) {
-    return Expanded(child: GestureDetector(
-      behavior: HitTestBehavior.opaque,
-      onTap: () {
-        setState(() => _tab = idx);
-        if (idx == 0) { widget.historyRecords.isEmpty ? widget.onLoadHistory() : widget.onLoadHistoryBg(); }
-        else { widget.rankingList.isEmpty ? widget.onLoadRanking() : widget.onLoadRankingBg(); }
-      },
-      child: Center(child: AnimatedDefaultTextStyle(
-        duration: const Duration(milliseconds: 200),
-        style: TextStyle(fontSize: 13, fontWeight: _tab == idx ? FontWeight.w600 : FontWeight.w400,
-          color: _tab == idx ? const Color(0xFF111827) : const Color(0xFF6B7280).withOpacity(0.7)),
-        child: Text(label),
-      )),
-    ));
+    return Expanded(
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onTap: () {
+          setState(() => _tab = idx);
+          if (idx == 0) {
+            widget.historyRecords.isEmpty
+                ? widget.onLoadHistory()
+                : widget.onLoadHistoryBg();
+          } else {
+            widget.rankingList.isEmpty
+                ? widget.onLoadRanking()
+                : widget.onLoadRankingBg();
+          }
+        },
+        child: Center(
+          child: AnimatedDefaultTextStyle(
+            duration: const Duration(milliseconds: 200),
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: _tab == idx ? FontWeight.w600 : FontWeight.w400,
+              color: _tab == idx
+                  ? const Color(0xFF111827)
+                  : const Color(0xFF6B7280).withOpacity(0.7),
+            ),
+            child: Text(label),
+          ),
+        ),
+      ),
+    );
   }
 
   Widget _buildHistoryContent() {
-    if (widget.historyRecords.isEmpty && widget.isLoadingHistory) return const SkeletonList(count: 5, isRanking: false);
+    if (widget.historyRecords.isEmpty && widget.isLoadingHistory)
+      return const SkeletonList(count: 5, isRanking: false);
     if (widget.historyRecords.isEmpty) return _emptyState(widget.onLoadHistory);
     int maxLate = 0;
-    for (final r in widget.historyRecords) { final lm = ((r['late_minutes'] ?? 0) as num).toInt(); if (lm > maxLate) maxLate = lm; }
+    for (final r in widget.historyRecords) {
+      final lm = ((r['late_minutes'] ?? 0) as num).toInt();
+      if (lm > maxLate) maxLate = lm;
+    }
     return RefreshIndicator(
-      onRefresh: widget.onLoadHistoryBg, color: const Color(0xFFF97316),
+      onRefresh: widget.onLoadHistoryBg,
+      color: const Color(0xFFF97316),
       child: ListView.builder(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         itemCount: widget.historyRecords.length,
         itemBuilder: (ctx, i) {
@@ -2430,8 +2588,14 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
           final delayMs = 300 + 60 * i;
           return _SequentialRevealItem(
             delayMs: delayMs,
-            child: _HistoryCardAnimated(record: r, isLate: isLate, lateMin: lateMin, isFirst: i == 0,
-              isMaxLate: isLate && lateMin == maxLate && maxLate > 0, animDelay: Duration(milliseconds: delayMs)),
+            child: _HistoryCardAnimated(
+              record: r,
+              isLate: isLate,
+              lateMin: lateMin,
+              isFirst: i == 0,
+              isMaxLate: isLate && lateMin == maxLate && maxLate > 0,
+              animDelay: Duration(milliseconds: delayMs),
+            ),
           );
         },
       ),
@@ -2439,25 +2603,38 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
   }
 
   Widget _buildRankingContent() {
-    if (widget.rankingList.isEmpty && widget.isLoadingRanking) return const SkeletonList(count: 5, isRanking: true);
+    if (widget.rankingList.isEmpty && widget.isLoadingRanking)
+      return const SkeletonList(count: 5, isRanking: true);
     if (widget.rankingList.isEmpty) return _emptyState(widget.onLoadRanking);
     return RefreshIndicator(
-      onRefresh: widget.onLoadRankingBg, color: const Color(0xFFF97316),
+      onRefresh: widget.onLoadRankingBg,
+      color: const Color(0xFFF97316),
       child: ListView.builder(
-        physics: const BouncingScrollPhysics(parent: AlwaysScrollableScrollPhysics()),
+        physics: const BouncingScrollPhysics(
+          parent: AlwaysScrollableScrollPhysics(),
+        ),
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         itemCount: widget.rankingList.length,
         itemBuilder: (ctx, i) {
           final r = widget.rankingList[i];
-          final isCurrentUser = widget.user != null && r['email'] == widget.user!['email'];
+          final isCurrentUser =
+              widget.user != null && r['email'] == widget.user!['email'];
           final lateMinutes = ((r['total_late_minutes'] ?? 0) as num).toInt();
           final lateDays = ((r['late_days'] ?? 0) as num).toInt();
           final onTimeDays = ((r['on_time_days'] ?? 0) as num).toInt();
           final delayMs = 300 + 70 * i;
           return _SequentialRevealItem(
             delayMs: delayMs,
-            child: _RankingCardAnimated(record: r, index: i, isCurrentUser: isCurrentUser, isTop1: i == 0,
-              lateMinutes: lateMinutes, lateDays: lateDays, onTimeDays: onTimeDays, animDelay: Duration(milliseconds: delayMs)),
+            child: _RankingCardAnimated(
+              record: r,
+              index: i,
+              isCurrentUser: isCurrentUser,
+              isTop1: i == 0,
+              lateMinutes: lateMinutes,
+              lateDays: lateDays,
+              onTimeDays: onTimeDays,
+              animDelay: Duration(milliseconds: delayMs),
+            ),
           );
         },
       ),
@@ -2465,9 +2642,13 @@ class _StatsPopupState extends State<_StatsPopup> with TickerProviderStateMixin 
   }
 
   Widget _emptyState(VoidCallback onRetry) {
-    return Center(child: TextButton.icon(
-      onPressed: onRetry, icon: const Icon(Icons.refresh, size: 18), label: const Text('Tải lại'),
-    ));
+    return Center(
+      child: TextButton.icon(
+        onPressed: onRetry,
+        icon: const Icon(Icons.refresh, size: 18),
+        label: const Text('Tải lại'),
+      ),
+    );
   }
 }
 
@@ -2480,20 +2661,27 @@ class _SequentialRevealItem extends StatefulWidget {
   State<_SequentialRevealItem> createState() => _SequentialRevealItemState();
 }
 
-class _SequentialRevealItemState extends State<_SequentialRevealItem> with SingleTickerProviderStateMixin {
+class _SequentialRevealItemState extends State<_SequentialRevealItem>
+    with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
 
   @override
   void initState() {
     super.initState();
-    _ctrl = AnimationController(vsync: this, duration: const Duration(milliseconds: 400));
+    _ctrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 400),
+    );
     Future.delayed(Duration(milliseconds: widget.delayMs), () {
       if (mounted) _ctrl.forward();
     });
   }
 
   @override
-  void dispose() { _ctrl.dispose(); super.dispose(); }
+  void dispose() {
+    _ctrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -2510,7 +2698,3 @@ class _SequentialRevealItemState extends State<_SequentialRevealItem> with Singl
     );
   }
 }
-
-
-
-
