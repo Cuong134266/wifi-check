@@ -73,6 +73,10 @@ function refreshFan(){
   cards.forEach((c,i)=>{
     if(drag&&drag.i===i)return;
     const p=LuneMotion.wave(i,cards.length,innerWidth,hover);
+    if(hover>=0){
+      const base=fanPose(i),maxLift=mobile()?42:54;
+      p.y=Math.max(p.y,base.y-maxLift);
+    }
     target(c,p);c.el.classList.toggle('hover',i===hover);
     c.el.style.zIndex=i+1;c.el.tabIndex=0;
     c.el.style.pointerEvents='none';
