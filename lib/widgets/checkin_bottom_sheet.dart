@@ -1,23 +1,30 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
 import 'package:flutter/foundation.dart';
 
 // Conditional import: native dùng WebView, web dùng Image fallback
-import 'checkin_map_native.dart' if (dart.library.html) 'checkin_map_web.dart' as map_impl;
+import 'checkin_map_native.dart'
+    if (dart.library.html) 'checkin_map_web.dart'
+    as map_impl;
 
 class CheckinBottomSheet extends StatefulWidget {
-  final Future<bool> checkinFuture;
+  final Future<bool> Function() checkinTask;
   final Map<String, dynamic> locationInfo;
   final bool isAlreadyCheckedIn;
   final String? checkinTime;
+  final Map<String, dynamic>? tarotCard;
+  final String Function()? errorMessage;
 
   const CheckinBottomSheet({
     Key? key,
-    required this.checkinFuture,
+    required this.checkinTask,
     required this.locationInfo,
     this.isAlreadyCheckedIn = false,
     this.checkinTime,
+    this.tarotCard,
+    this.errorMessage,
   }) : super(key: key);
 
   @override
@@ -25,11 +32,16 @@ class CheckinBottomSheet extends StatefulWidget {
 }
 
 class _CheckinBottomSheetState extends State<CheckinBottomSheet>
-    with SingleTickerProviderStateMixin {
+    with TickerProviderStateMixin {
+  static const double _tarotCardWidth = 252;
+  static const double _tarotCardHeight = 370;
+
   bool _isLoading = true;
   bool _isSuccess = false;
   late AnimationController _fadeController;
+  late AnimationController _holoController;
   late Animation<double> _fadeAnimation;
+  Offset _holoTilt = Offset.zero;
 
   @override
   void initState() {
@@ -42,6 +54,15 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
       parent: _fadeController,
       curve: Curves.easeOut,
     );
+    _holoController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 1450),
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && widget.tarotCard != null) {
+        _holoController.forward();
+      }
+    });
 
     if (widget.isAlreadyCheckedIn) {
       _isLoading = false;
@@ -55,12 +76,13 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   @override
   void dispose() {
     _fadeController.dispose();
+    _holoController.dispose();
     super.dispose();
   }
 
   Future<void> _waitForCheckin() async {
     try {
-      final success = await widget.checkinFuture;
+      final success = await widget.checkinTask();
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -68,7 +90,7 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
         });
         _fadeController.forward();
 
-        if (!success) {
+        if (!success && widget.tarotCard == null) {
           Future.delayed(const Duration(milliseconds: 2000), () {
             if (mounted) Navigator.pop(context);
           });
@@ -81,15 +103,19 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           _isSuccess = false;
         });
         _fadeController.forward();
-        Future.delayed(const Duration(milliseconds: 2000), () {
-          if (mounted) Navigator.pop(context);
-        });
+        if (widget.tarotCard == null) {
+          Future.delayed(const Duration(milliseconds: 2000), () {
+            if (mounted) Navigator.pop(context);
+          });
+        }
       }
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    if (widget.tarotCard != null) return _buildTarotReadingSheet(context);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -139,6 +165,325 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           ),
         ),
       ],
+    );
+  }
+
+  Widget _buildTarotReadingSheet(BuildContext context) {
+    return Container(
+      height: MediaQuery.of(context).size.height * .82,
+      padding: const EdgeInsets.fromLTRB(18, 12, 18, 18),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(24),
+      ),
+      child: Column(
+        children: [
+          Align(
+            alignment: Alignment.centerRight,
+            child: IconButton(
+              onPressed: () => Navigator.of(context).pop(),
+              icon: const Icon(Icons.close_rounded),
+            ),
+          ),
+          Expanded(
+            child: ListView(
+              physics: const BouncingScrollPhysics(),
+              padding: const EdgeInsets.only(top: 8, bottom: 20),
+              children: [
+                Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 980),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 700;
+                        final artwork = Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildTarotCard(),
+                            const SizedBox(height: 22),
+                            _buildTarotCheckinPanel(),
+                          ],
+                        );
+                        final reading = _buildTarotReading();
+
+                        if (compact) {
+                          return Column(
+                            children: [
+                              artwork,
+                              const SizedBox(height: 28),
+                              reading,
+                            ],
+                          );
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(width: 292, child: artwork),
+                            const SizedBox(width: 38),
+                            Expanded(child: reading),
+                          ],
+                        );
+                      },
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SizedBox(
+            width: double.infinity,
+            height: 50,
+            child: ElevatedButton(
+              onPressed: () => Navigator.of(context).pop(),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.black,
+                foregroundColor: Colors.white,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(24),
+                ),
+              ),
+              child: const Text(
+                'Đóng',
+                style: TextStyle(fontSize: 15, fontWeight: FontWeight.w700),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTarotReading() {
+    final card = widget.tarotCard!;
+    final keywords = card['keywords']
+        .toString()
+        .split(',')
+        .map((value) => value.trim())
+        .where((value) => value.isNotEmpty)
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          '${card['family'] ?? ''}  ·  ${card['name'] ?? ''}'.toUpperCase(),
+          style: const TextStyle(
+            color: Color(0xFF9A753B),
+            fontSize: 10,
+            fontWeight: FontWeight.w700,
+            letterSpacing: 1.5,
+          ),
+        ),
+        const SizedBox(height: 10),
+        Text(
+          card['vn']?.toString() ?? card['name']?.toString() ?? '',
+          style: const TextStyle(
+            color: Color(0xFF172033),
+            fontSize: 38,
+            height: 1.05,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+        const SizedBox(height: 15),
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: keywords
+              .map(
+                (keyword) => Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  decoration: BoxDecoration(
+                    color: const Color(0xFFFFFBEB),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0xFFF1DFC0)),
+                  ),
+                  child: Text(
+                    keyword,
+                    style: const TextStyle(
+                      color: Color(0xFF8A642E),
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+        const SizedBox(height: 22),
+        Text(
+          card['overview']?.toString() ?? '',
+          style: const TextStyle(
+            color: Color(0xFF475569),
+            fontSize: 14,
+            height: 1.75,
+          ),
+        ),
+        _buildMeaningSection('Tình cảm & kết nối', card['love']),
+        _buildMeaningSection('Công việc & nguồn lực', card['work']),
+        _buildMeaningSection('Mặt hạn chế cần đối chiếu', card['shadow']),
+        _buildMeaningSection('Một bước cụ thể', card['action']),
+        _buildMeaningSection('Thông điệp hôm nay', card['dailyMessage']),
+        _buildMeaningSection('Điều nên chú ý', card['caution']),
+        _buildMeaningSection('Một việc nhỏ nên làm', card['smallAction']),
+        Container(
+          width: double.infinity,
+          margin: const EdgeInsets.only(top: 22),
+          padding: const EdgeInsets.fromLTRB(18, 15, 18, 17),
+          decoration: const BoxDecoration(
+            color: Color(0xFFF8FAFC),
+            border: Border(
+              left: BorderSide(color: Color(0xFFC6AB7D), width: 3),
+            ),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'MỘT ĐIỀU ĐỂ SUY NGẪM',
+                style: TextStyle(
+                  color: Color(0xFF9A753B),
+                  fontSize: 9,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.3,
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                card['question']?.toString() ?? '',
+                style: const TextStyle(
+                  color: Color(0xFF334155),
+                  fontSize: 16,
+                  height: 1.55,
+                  fontStyle: FontStyle.italic,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildMeaningSection(String title, dynamic content) {
+    final text = content?.toString().trim() ?? '';
+    if (text.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 21),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            title,
+            style: const TextStyle(
+              color: Color(0xFF172033),
+              fontSize: 14,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 7),
+          Text(
+            text,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 13,
+              height: 1.65,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTarotCheckinPanel() {
+    final error = widget.errorMessage?.call().trim() ?? '';
+    final distance = double.tryParse(
+      widget.locationInfo['distance']?.toString() ?? '',
+    );
+    final now = DateTime.now();
+    final currentTime =
+        '${now.hour.toString().padLeft(2, '0')}:${now.minute.toString().padLeft(2, '0')}';
+    final color = _isLoading
+        ? const Color(0xFFB38A49)
+        : _isSuccess
+        ? const Color(0xFF16A34A)
+        : const Color(0xFFDC2626);
+    final background = _isLoading
+        ? const Color(0xFFFFFBEB)
+        : _isSuccess
+        ? const Color(0xFFF0FDF4)
+        : const Color(0xFFFEF2F2);
+
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
+      width: double.infinity,
+      padding: const EdgeInsets.all(15),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: color.withOpacity(.25)),
+      ),
+      child: Column(
+        children: [
+          if (_isLoading)
+            SizedBox(
+              width: 25,
+              height: 25,
+              child: CircularProgressIndicator(strokeWidth: 2.5, color: color),
+            )
+          else
+            Icon(
+              _isSuccess ? Icons.check_circle_rounded : Icons.error_rounded,
+              color: color,
+              size: 30,
+            ),
+          const SizedBox(height: 9),
+          Text(
+            _isLoading
+                ? 'Đang check-in…'
+                : _isSuccess
+                ? 'Check-in thành công'
+                : 'Không thể check-in',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF172033),
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+          const SizedBox(height: 5),
+          Text(
+            _isLoading
+                ? 'Đang xác minh tài khoản, vị trí và mạng công ty.'
+                : _isSuccess
+                ? (widget.isAlreadyCheckedIn && widget.checkinTime != null
+                      ? widget.checkinTime!
+                      : 'Đã ghi nhận lúc $currentTime')
+                : (error.isNotEmpty
+                      ? error
+                      : 'Vui lòng kiểm tra vị trí và mạng công ty.'),
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              color: Color(0xFF64748B),
+              fontSize: 10,
+              height: 1.5,
+            ),
+          ),
+          if (!_isLoading && _isSuccess && distance != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              'Cách văn phòng ${distance.round()} m',
+              style: TextStyle(
+                color: color,
+                fontSize: 10,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
@@ -227,13 +572,15 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        // imgCheck từ Figma
-        Image.asset(
-          'assets/images/imgCheck.png',
-          width: 140,
-          height: 140,
-          fit: BoxFit.contain,
-        ),
+        if (widget.tarotCard != null)
+          _buildTarotCard()
+        else
+          Image.asset(
+            'assets/images/imgCheck.png',
+            width: 140,
+            height: 140,
+            fit: BoxFit.contain,
+          ),
         const SizedBox(height: 20),
         // Title
         const Text(
@@ -247,6 +594,19 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           ),
         ),
         const SizedBox(height: 8),
+        if (widget.tarotCard != null) ...[
+          Text(
+            '${widget.tarotCard!['vn'] ?? widget.tarotCard!['name'] ?? ''}',
+            textAlign: TextAlign.center,
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w700,
+              color: Color(0xFFD09A45),
+              fontFamily: 'Inter',
+            ),
+          ),
+          const SizedBox(height: 6),
+        ],
         // Subtitle
         RichText(
           text: TextSpan(
@@ -316,7 +676,190 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     );
   }
 
+  Widget _buildTarotCard() {
+    final name = widget.tarotCard?['name']?.toString().trim() ?? '';
+    return MouseRegion(
+      onHover: (event) => _updateHoloTilt(event.localPosition),
+      onExit: (_) => _resetHoloTilt(),
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        onPanDown: (details) => _updateHoloTilt(details.localPosition),
+        onPanUpdate: (details) => _updateHoloTilt(details.localPosition),
+        onPanEnd: (_) => _resetHoloTilt(),
+        onPanCancel: _resetHoloTilt,
+        child: TweenAnimationBuilder<Offset>(
+          tween: Tween(end: _holoTilt),
+          duration: _holoTilt == Offset.zero
+              ? const Duration(milliseconds: 520)
+              : const Duration(milliseconds: 180),
+          curve: _holoTilt == Offset.zero
+              ? Curves.easeOutCubic
+              : Curves.easeOut,
+          builder: (context, tilt, child) {
+            final amount = math.min(1.0, tilt.distance);
+            final foilOpacity = .055 + amount * .12;
+            final glareOpacity = .07 + amount * .20;
+            final transform = Matrix4.identity()
+              ..setEntry(3, 2, .00115)
+              ..rotateX(-tilt.dy * .105)
+              ..rotateY(tilt.dx * .13);
+
+            return Transform(
+              alignment: Alignment.center,
+              transform: transform,
+              child: Container(
+                width: _tarotCardWidth,
+                height: _tarotCardHeight,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF111A2B),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: const Color(0xFFC0A06C)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(.16 + amount * .08),
+                      blurRadius: 22 + amount * 8,
+                      offset: Offset(tilt.dx * -7, 11 + tilt.dy * 5),
+                    ),
+                  ],
+                ),
+                clipBehavior: Clip.antiAlias,
+                child: Stack(
+                  fit: StackFit.expand,
+                  children: [
+                    if (name.isEmpty)
+                      const Icon(
+                        Icons.auto_awesome_rounded,
+                        color: Color(0xFFC8AF7F),
+                        size: 42,
+                      )
+                    else
+                      Image.asset(
+                        'assets/images/$name.webp',
+                        fit: BoxFit.contain,
+                        errorBuilder: (_, __, ___) => const Icon(
+                          Icons.auto_awesome_rounded,
+                          color: Color(0xFFC8AF7F),
+                          size: 42,
+                        ),
+                      ),
+                    IgnorePointer(
+                      child: Opacity(
+                        opacity: foilOpacity,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment(
+                                -1 + tilt.dx * .45,
+                                -1 + tilt.dy * .35,
+                              ),
+                              end: Alignment(
+                                1 + tilt.dx * .25,
+                                1 + tilt.dy * .45,
+                              ),
+                              stops: const [0, .22, .43, .64, .82, 1],
+                              colors: const [
+                                Colors.transparent,
+                                Color(0xFFE8D5A8),
+                                Color(0xFFCDBAF4),
+                                Color(0xFF8FD8CB),
+                                Color(0xFFEFB9C8),
+                                Colors.transparent,
+                              ],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    IgnorePointer(
+                      child: Opacity(
+                        opacity: glareOpacity,
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            gradient: RadialGradient(
+                              center: Alignment(tilt.dx, tilt.dy),
+                              radius: .72,
+                              colors: const [
+                                Color(0xB8FFF9ED),
+                                Color(0x35FFFFFF),
+                                Colors.transparent,
+                              ],
+                              stops: const [0, .28, 1],
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                    IgnorePointer(
+                      child: AnimatedBuilder(
+                        animation: _holoController,
+                        builder: (context, child) {
+                          final progress = Curves.easeInOutCubic.transform(
+                            _holoController.value,
+                          );
+                          final sweep = -3.2 + progress * 6.4;
+                          final opacity =
+                              math.sin(_holoController.value * math.pi) * .32;
+                          return Opacity(
+                            opacity: opacity.clamp(0.0, 1.0),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                gradient: LinearGradient(
+                                  begin: Alignment(sweep - .7, -1),
+                                  end: Alignment(sweep + .7, 1),
+                                  stops: const [0, .4, .5, .6, 1],
+                                  colors: const [
+                                    Colors.transparent,
+                                    Colors.transparent,
+                                    Color(0xD9FFF9EA),
+                                    Colors.transparent,
+                                    Colors.transparent,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    IgnorePointer(
+                      child: DecoratedBox(
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(11),
+                          border: Border.all(
+                            color: Color.lerp(
+                              const Color(0x45E5C98F),
+                              const Color(0x66BDAFE6),
+                              (tilt.dx + 1) / 2,
+                            )!,
+                            width: 1,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  void _updateHoloTilt(Offset position) {
+    final dx = ((position.dx / _tarotCardWidth) * 2 - 1).clamp(-1.0, 1.0);
+    final dy = ((position.dy / _tarotCardHeight) * 2 - 1).clamp(-1.0, 1.0);
+    if (!mounted) return;
+    setState(() => _holoTilt = Offset(dx, dy));
+  }
+
+  void _resetHoloTilt() {
+    if (!mounted || _holoTilt == Offset.zero) return;
+    setState(() => _holoTilt = Offset.zero);
+  }
+
   Widget _buildErrorView() {
+    final providedError = widget.errorMessage?.call().trim() ?? '';
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -339,10 +882,12 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Vui lòng kiểm tra lại kết nối mạng hoặc liên hệ Admin',
+        Text(
+          providedError.isNotEmpty
+              ? providedError
+              : 'Vui lòng kiểm tra lại kết nối mạng hoặc liên hệ Admin',
           textAlign: TextAlign.center,
-          style: TextStyle(
+          style: const TextStyle(
             fontSize: 15,
             color: Color(0xFF9CA3AF),
             fontFamily: 'Inter',
