@@ -51,6 +51,8 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   late final ScrollController _tarotScrollController;
   int? _scrollPointer;
   double? _scrollPointerY;
+  Duration? _scrollPointerTime;
+  double _scrollVelocity = 0;
 
   @override
   void initState() {
@@ -202,57 +204,51 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
             ),
           ),
           Expanded(
-            child: Scrollbar(
-              controller: _tarotScrollController,
-              thumbVisibility: true,
-              trackVisibility: true,
-              interactive: true,
-              child: Listener(
-                behavior: HitTestBehavior.opaque,
-                onPointerDown: _handleScrollPointerDown,
-                onPointerMove: _handleScrollPointerMove,
-                onPointerUp: _handleScrollPointerEnd,
-                onPointerCancel: _handleScrollPointerEnd,
-                onPointerSignal: _handleScrollPointerSignal,
-                child: SingleChildScrollView(
-                  controller: _tarotScrollController,
-                  physics: const NeverScrollableScrollPhysics(),
-                  padding: const EdgeInsets.only(top: 8, bottom: 20),
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 980),
-                      child: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final compact = constraints.maxWidth < 700;
-                          final artwork = Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _buildTarotCard(),
-                              const SizedBox(height: 22),
-                              _buildTarotCheckinPanel(),
-                            ],
-                          );
-                          final reading = _buildTarotReading();
+            child: Listener(
+              behavior: HitTestBehavior.opaque,
+              onPointerDown: _handleScrollPointerDown,
+              onPointerMove: _handleScrollPointerMove,
+              onPointerUp: _handleScrollPointerEnd,
+              onPointerCancel: _handleScrollPointerEnd,
+              onPointerSignal: _handleScrollPointerSignal,
+              child: SingleChildScrollView(
+                controller: _tarotScrollController,
+                physics: const NeverScrollableScrollPhysics(),
+                padding: const EdgeInsets.only(top: 8, bottom: 20),
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 980),
+                    child: LayoutBuilder(
+                      builder: (context, constraints) {
+                        final compact = constraints.maxWidth < 700;
+                        final artwork = Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _buildTarotCard(),
+                            const SizedBox(height: 22),
+                            _buildTarotCheckinPanel(),
+                          ],
+                        );
+                        final reading = _buildTarotReading();
 
-                          if (compact) {
-                            return Column(
-                              children: [
-                                artwork,
-                                const SizedBox(height: 28),
-                                reading,
-                              ],
-                            );
-                          }
-                          return Row(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+                        if (compact) {
+                          return Column(
                             children: [
-                              SizedBox(width: 292, child: artwork),
-                              const SizedBox(width: 38),
-                              Expanded(child: reading),
+                              artwork,
+                              const SizedBox(height: 28),
+                              reading,
                             ],
                           );
-                        },
-                      ),
+                        }
+                        return Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            SizedBox(width: 292, child: artwork),
+                            const SizedBox(width: 38),
+                            Expanded(child: reading),
+                          ],
+                        );
+                      },
                     ),
                   ),
                 ),
@@ -1061,6 +1057,8 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   void _resetScrollGesture() {
     _scrollPointer = null;
     _scrollPointerY = null;
+    _scrollPointerTime = null;
+    _scrollVelocity = 0;
   }
 
   void _updateTarotTilt(Offset globalPosition) {
@@ -1115,6 +1113,21 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     _tarotScrollController.jumpTo(target.toDouble());
   }
 
+  void _flingScroll() {
+    if (!_tarotScrollController.hasClients || _scrollVelocity.abs() < 20) {
+      return;
+    }
+    final velocity = _scrollVelocity.clamp(-5000.0, 5000.0);
+    _tarotScrollController.animateTo(
+      (_tarotScrollController.offset + velocity * .18).clamp(
+        _tarotScrollController.position.minScrollExtent,
+        _tarotScrollController.position.maxScrollExtent,
+      ),
+      duration: const Duration(milliseconds: 650),
+      curve: Curves.decelerate,
+    );
+  }
+
   void _handleScrollPointerDown(PointerDownEvent event) {
     final cardRender = _tarotCardKey.currentContext?.findRenderObject();
     if (cardRender is RenderBox) {
@@ -1127,19 +1140,29 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     }
     _scrollPointer = event.pointer;
     _scrollPointerY = event.position.dy;
+    _scrollPointerTime = event.timeStamp;
+    _scrollVelocity = 0;
   }
 
   void _handleScrollPointerMove(PointerMoveEvent event) {
     if (_scrollPointer != event.pointer || _scrollPointerY == null) return;
     final previousY = _scrollPointerY!;
+    final previousTime = _scrollPointerTime ?? event.timeStamp;
+    final elapsed = event.timeStamp - previousTime;
     _scrollPointerY = event.position.dy;
+    _scrollPointerTime = event.timeStamp;
     _scrollBy(previousY - event.position.dy);
+    if (elapsed > Duration.zero) {
+      final velocity = (previousY - event.position.dy) /
+          elapsed.inMicroseconds * Duration.microsecondsPerSecond;
+      _scrollVelocity = _scrollVelocity * .65 + velocity * .35;
+    }
   }
 
   void _handleScrollPointerEnd(PointerEvent event) {
     if (_scrollPointer != event.pointer) return;
-    _scrollPointer = null;
-    _scrollPointerY = null;
+    _flingScroll();
+    _resetScrollGesture();
   }
 
   void _handleScrollPointerSignal(PointerSignalEvent event) {
