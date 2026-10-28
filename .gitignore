@@ -47,3 +47,8 @@ android/build/
 .gradle/
 *.apk
 
+# Local agent artifacts & temporary QA notes
+.claude/
+artifacts/
+design-qa.md
+

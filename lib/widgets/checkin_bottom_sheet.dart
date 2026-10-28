@@ -49,10 +49,6 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
   late Animation<double> _tarotFlipAnimation;
   late Animation<double> _fadeAnimation;
   late final ScrollController _tarotScrollController;
-  int? _scrollPointer;
-  double? _scrollPointerY;
-  Duration? _scrollPointerTime;
-  double _scrollVelocity = 0;
 
   @override
   void initState() {
@@ -204,16 +200,19 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
             ),
           ),
           Expanded(
-            child: Listener(
-              behavior: HitTestBehavior.opaque,
-              onPointerDown: _handleScrollPointerDown,
-              onPointerMove: _handleScrollPointerMove,
-              onPointerUp: _handleScrollPointerEnd,
-              onPointerCancel: _handleScrollPointerEnd,
-              onPointerSignal: _handleScrollPointerSignal,
+            child: ScrollConfiguration(
+              behavior: ScrollConfiguration.of(context).copyWith(
+                scrollbars: false,
+                dragDevices: {
+                  PointerDeviceKind.touch,
+                  PointerDeviceKind.mouse,
+                  PointerDeviceKind.trackpad,
+                  PointerDeviceKind.stylus,
+                },
+              ),
               child: SingleChildScrollView(
                 controller: _tarotScrollController,
-                physics: const NeverScrollableScrollPhysics(),
+                physics: const ClampingScrollPhysics(),
                 padding: const EdgeInsets.only(top: 8, bottom: 20),
                 child: Center(
                   child: ConstrainedBox(
@@ -908,7 +907,6 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
           behavior: HitTestBehavior.opaque,
           excludeFromSemantics: false,
           onTap: _flipTarotCard,
-          onPanStart: (_) => _resetScrollGesture(),
           onPanUpdate: (details) => _updateTarotTilt(details.globalPosition),
           onPanEnd: (_) => _resetTarotTilt(),
           child: SizedBox(
@@ -1054,13 +1052,6 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     );
   }
 
-  void _resetScrollGesture() {
-    _scrollPointer = null;
-    _scrollPointerY = null;
-    _scrollPointerTime = null;
-    _scrollVelocity = 0;
-  }
-
   void _updateTarotTilt(Offset globalPosition) {
     final renderObject = _tarotCardKey.currentContext?.findRenderObject();
     if (renderObject is! RenderBox) return;
@@ -1100,74 +1091,6 @@ class _CheckinBottomSheetState extends State<CheckinBottomSheet>
     } else {
       setState(() => _tarotRevealed = true);
       _tarotFlipController.forward();
-    }
-  }
-
-  void _scrollBy(double delta) {
-    if (!_tarotScrollController.hasClients || delta == 0) return;
-    final position = _tarotScrollController.position;
-    final target = (position.pixels + delta).clamp(
-      position.minScrollExtent,
-      position.maxScrollExtent,
-    );
-    _tarotScrollController.jumpTo(target.toDouble());
-  }
-
-  void _flingScroll() {
-    if (!_tarotScrollController.hasClients || _scrollVelocity.abs() < 20) {
-      return;
-    }
-    final velocity = _scrollVelocity.clamp(-5000.0, 5000.0);
-    _tarotScrollController.animateTo(
-      (_tarotScrollController.offset + velocity * .18).clamp(
-        _tarotScrollController.position.minScrollExtent,
-        _tarotScrollController.position.maxScrollExtent,
-      ),
-      duration: const Duration(milliseconds: 650),
-      curve: Curves.decelerate,
-    );
-  }
-
-  void _handleScrollPointerDown(PointerDownEvent event) {
-    final cardRender = _tarotCardKey.currentContext?.findRenderObject();
-    if (cardRender is RenderBox) {
-      final cardRect = cardRender.localToGlobal(Offset.zero) & cardRender.size;
-      if (cardRect.contains(event.position)) {
-        _scrollPointer = null;
-        _scrollPointerY = null;
-        return;
-      }
-    }
-    _scrollPointer = event.pointer;
-    _scrollPointerY = event.position.dy;
-    _scrollPointerTime = event.timeStamp;
-    _scrollVelocity = 0;
-  }
-
-  void _handleScrollPointerMove(PointerMoveEvent event) {
-    if (_scrollPointer != event.pointer || _scrollPointerY == null) return;
-    final previousY = _scrollPointerY!;
-    final previousTime = _scrollPointerTime ?? event.timeStamp;
-    final elapsed = event.timeStamp - previousTime;
-    _scrollPointerY = event.position.dy;
-    _scrollPointerTime = event.timeStamp;
-    _scrollBy(previousY - event.position.dy);
-    if (elapsed > Duration.zero) {
-      final velocity = (previousY - event.position.dy) /
-          elapsed.inMicroseconds * Duration.microsecondsPerSecond;
-      _scrollVelocity = _scrollVelocity * .65 + velocity * .35;
-    }
-  }
-
-  void _handleScrollPointerEnd(PointerEvent event) {
-    if (_scrollPointer != event.pointer) return;
-    _flingScroll();
-    _resetScrollGesture();
-  }
-
-  void _handleScrollPointerSignal(PointerSignalEvent event) {
-    if (event is PointerScrollEvent) {
-      _scrollBy(event.scrollDelta.dy);
     }
   }
 
