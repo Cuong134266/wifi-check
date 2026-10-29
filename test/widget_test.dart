@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:wifi_checkin_flutter/main.dart';
 import 'package:wifi_checkin_flutter/widgets/checkin_bottom_sheet.dart';
+import 'package:wifi_checkin_flutter/widgets/leave_request_sheet.dart';
 
 void main() {
   testWidgets('App launches smoke test', (WidgetTester tester) async {
@@ -84,5 +85,32 @@ void main() {
     );
     await tester.pump();
     expect(before.position.pixels, greaterThan(0));
+  });
+
+  testWidgets('LeaveRequestSheet renders and accepts text input', (WidgetTester tester) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: LeaveRequestSheet(
+            user: {
+              'name': 'Test User',
+              'email': 'test@example.com',
+            },
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    expect(find.text('Đăng ký nghỉ'), findsOneWidget);
+    expect(find.text('Gửi đăng ký'), findsOneWidget);
+    expect(find.byType(TextField), findsOneWidget);
+
+    await tester.enterText(find.byType(TextField), 'Nghỉ ốm');
+    await tester.pump();
+    expect(find.text('Nghỉ ốm'), findsOneWidget);
   });
 }

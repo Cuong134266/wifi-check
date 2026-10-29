@@ -75,7 +75,8 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   // --- Interaction state ---
   bool _isTarotDrawing = false;
-  bool _isTarotDialogOpen = false;
+  int _activeModalCount = 0;
+  bool get _isModalOpen => _activeModalCount > 0;
   final ValueNotifier<Map<String, dynamic>?> _tarotCheckinStatus =
       ValueNotifier<Map<String, dynamic>?>(null);
 
@@ -365,6 +366,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
         if (mounted) {
           dialogIsOpen = true;
+          setState(() => _activeModalCount++);
           showDialog(
             context: context,
             barrierDismissible: true,
@@ -383,6 +385,11 @@ class _CheckinScreenState extends State<CheckinScreen>
               ),
             ),
           ).then((_) {
+            if (mounted) {
+              setState(() {
+                if (_activeModalCount > 0) _activeModalCount--;
+              });
+            }
             dialogIsOpen = false;
             // User đóng dialog mà chưa đăng nhập
             if (_webLoginCompleter != null &&
@@ -616,56 +623,77 @@ class _CheckinScreenState extends State<CheckinScreen>
     return _performCheckin(showErrorPopup: false);
   }
 
+  Future<T?> _showAppGeneralDialog<T>({
+    BuildContext? context,
+    required RoutePageBuilder pageBuilder,
+    RouteTransitionsBuilder? transitionBuilder,
+    Color? barrierColor,
+    bool barrierDismissible = true,
+    String? barrierLabel,
+    Duration transitionDuration = const Duration(milliseconds: 300),
+  }) async {
+    if (!mounted) return null;
+    setState(() => _activeModalCount++);
+    try {
+      return await showGeneralDialog<T>(
+        context: context ?? this.context,
+        barrierColor: barrierColor ?? Colors.black.withOpacity(0.5),
+        barrierDismissible: barrierDismissible,
+        barrierLabel: barrierLabel,
+        transitionDuration: transitionDuration,
+        pageBuilder: pageBuilder,
+        transitionBuilder: transitionBuilder,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (_activeModalCount > 0) _activeModalCount--;
+        });
+      }
+    }
+  }
+
   Future<void> _showCheckinResultSheet(Map<String, dynamic> tarotCard) async {
     if (!mounted) return;
 
-    setState(() => _isTarotDialogOpen = true);
-    try {
-      await showGeneralDialog(
-        context: context,
-        barrierColor: Colors.black.withOpacity(0.5),
-        barrierDismissible: true,
-        barrierLabel: 'Dismiss',
-        transitionDuration: const Duration(milliseconds: 300),
-        pageBuilder: (context, anim1, anim2) {
-          return BackdropFilter(
-            filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
-            child: Align(
-              alignment: Alignment.bottomCenter,
-              child: Padding(
-                padding: const EdgeInsets.only(
-                  bottom: 24.0,
-                  left: 16,
-                  right: 16,
-                ),
-                child: Material(
-                  color: Colors.transparent,
-                  child: CheckinBottomSheet(
-                    checkinTask: _performTarotCheckin,
-                    locationInfo: _locationInfo,
-                    isAlreadyCheckedIn: _isCheckedIn,
-                    checkinTime: _wifiSubText,
-                    tarotCard: tarotCard,
-                    errorMessage: () => _lastCheckinError,
-                  ),
+    await _showAppGeneralDialog(
+      context: context,
+      barrierColor: Colors.black.withOpacity(0.5),
+      barrierDismissible: true,
+      barrierLabel: 'Dismiss',
+      transitionDuration: const Duration(milliseconds: 300),
+      pageBuilder: (context, anim1, anim2) {
+        return BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 12, sigmaY: 12),
+          child: Align(
+            alignment: Alignment.bottomCenter,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 24.0, left: 16, right: 16),
+              child: Material(
+                color: Colors.transparent,
+                child: CheckinBottomSheet(
+                  checkinTask: _performTarotCheckin,
+                  locationInfo: _locationInfo,
+                  isAlreadyCheckedIn: _isCheckedIn,
+                  checkinTime: _wifiSubText,
+                  tarotCard: tarotCard,
+                  errorMessage: () => _lastCheckinError,
                 ),
               ),
             ),
-          );
-        },
-        transitionBuilder: (context, anim1, anim2, child) {
-          return SlideTransition(
-            position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
-                .animate(
-                  CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic),
-                ),
-            child: FadeTransition(opacity: anim1, child: child),
-          );
-        },
-      );
-    } finally {
-      if (mounted) setState(() => _isTarotDialogOpen = false);
-    }
+          ),
+        );
+      },
+      transitionBuilder: (context, anim1, anim2, child) {
+        return SlideTransition(
+          position: Tween<Offset>(
+            begin: const Offset(0, 1),
+            end: Offset.zero,
+          ).animate(CurvedAnimation(parent: anim1, curve: Curves.easeOutCubic)),
+          child: FadeTransition(opacity: anim1, child: child),
+        );
+      },
+    );
     if (mounted) setState(() {});
   }
 
@@ -675,7 +703,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     if (!await _ensureLoggedIn()) return;
     if (!mounted || _user == null) return;
 
-    final result = await showGeneralDialog(
+    final result = await _showAppGeneralDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       barrierDismissible: true,
@@ -716,9 +744,19 @@ class _CheckinScreenState extends State<CheckinScreen>
     if (!await _ensureLoggedIn()) return;
     if (!mounted) return;
 
-    final rawQr = await Navigator.of(
-      context,
-    ).push(MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+    setState(() => _activeModalCount++);
+    dynamic rawQr;
+    try {
+      rawQr = await Navigator.of(
+        context,
+      ).push(MaterialPageRoute(builder: (context) => const QrScannerScreen()));
+    } finally {
+      if (mounted) {
+        setState(() {
+          if (_activeModalCount > 0) _activeModalCount--;
+        });
+      }
+    }
 
     if (rawQr == 'ISSUE_QR') {
       _showQrIssuerSheet();
@@ -733,7 +771,7 @@ class _CheckinScreenState extends State<CheckinScreen>
   void _showQrCheckinResultSheet(String rawQr) {
     if (!mounted) return;
 
-    showGeneralDialog(
+    _showAppGeneralDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       barrierDismissible: true,
@@ -822,7 +860,7 @@ class _CheckinScreenState extends State<CheckinScreen>
     if (!await _ensureLoggedIn()) return;
     if (!mounted || _user == null) return;
 
-    final result = await showGeneralDialog(
+    final result = await _showAppGeneralDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       barrierDismissible: true,
@@ -860,7 +898,7 @@ class _CheckinScreenState extends State<CheckinScreen>
   }
 
   void _showLeaveSuccessSheet(Map result) {
-    showGeneralDialog(
+    _showAppGeneralDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       barrierDismissible: true,
@@ -1027,7 +1065,7 @@ class _CheckinScreenState extends State<CheckinScreen>
 
   void _showErrorPopup(String msg) {
     if (!mounted) return;
-    showGeneralDialog(
+    _showAppGeneralDialog(
       context: context,
       barrierColor: Colors.black.withOpacity(0.5),
       barrierDismissible: true,
@@ -1091,7 +1129,7 @@ class _CheckinScreenState extends State<CheckinScreen>
   void _openStats() {
     if (_user == null) return;
     _showHistory = true;
-    showGeneralDialog(
+    _showAppGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'Stats',
@@ -1143,7 +1181,7 @@ class _CheckinScreenState extends State<CheckinScreen>
         .trim();
     bool isSyncing = false;
 
-    showGeneralDialog(
+    _showAppGeneralDialog(
       context: context,
       barrierDismissible: true,
       barrierLabel: 'AdminIpSync',
@@ -1756,7 +1794,7 @@ class _CheckinScreenState extends State<CheckinScreen>
           child: LuneTarotCheckin(
             onCardSelected: _onLuneCardSelected,
             checkinStatus: _tarotCheckinStatus,
-            interactionEnabled: !_isTarotDialogOpen,
+            interactionEnabled: !_isModalOpen && !_isTarotDrawing,
           ),
         ),
       ],

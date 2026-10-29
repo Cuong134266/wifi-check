@@ -83,7 +83,14 @@ class _LuneTarotCheckinState extends State<LuneTarotCheckin> {
   void _applyInteractionState() {
     final pointerEvents = widget.interactionEnabled ? 'auto' : 'none';
     _iframe.style.pointerEvents = pointerEvents;
-    _iframe.parent?.style.pointerEvents = pointerEvents;
+    html.Element? current = _iframe.parent;
+    while (current != null && current != html.document.body) {
+      current.style.pointerEvents = pointerEvents;
+      if (current.tagName.toLowerCase().contains('platform-view')) {
+        break;
+      }
+      current = current.parent;
+    }
   }
 
   @override
