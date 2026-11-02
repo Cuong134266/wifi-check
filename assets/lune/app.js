@@ -2,7 +2,6 @@
 const $=s=>document.querySelector(s), reduce=matchMedia('(prefers-reduced-motion: reduce)').matches;
 const catalog=window.TAROT_CARDS;
 const data=catalog.map(c=>[c.name,c.vn,c.keywords,c.overview,c.question,c.action,c.symbol]);
-let shuffleMotion=null;
 let state='intro', cards=[], picked=null,hover=-1,drag=null,used=new Set(),session=0,soundOn=false,audioCtx,animId,last=0,active=true;
 let journal=[];try{journal=JSON.parse(localStorage.getItem('lune-journal')||'[]');if(!Array.isArray(journal))journal=[];journal=journal.filter(x=>Number.isInteger(x.id)&&data[x.id]&&typeof x.date==='string').slice(0,60)}catch{}
 const roman=['0','I','II','III','IV','V','VI','VII','VIII','IX','X','XI','XII','XIII','XIV','XV','XVI','XVII','XVIII','XIX','XX','XXI'];
@@ -54,7 +53,7 @@ function makeDeck(){
     const el=document.createElement('button');el.className='card';el.tabIndex=-1;
     el.setAttribute('aria-label','Chọn lá bài úp '+(i+1));
     const cover='<img class="tarot-back-art" src="../images/Cover.webp?v=1" alt="" draggable="false">';
-    el.innerHTML=`<div class="card-inner"><div class="face back" aria-hidden="true">${cover}</div><div class="face shuffle-back" aria-hidden="true">${cover}</div><div class="face front" aria-hidden="true">${frontFace(id)}</div></div>`;
+    el.innerHTML=`<div class="card-inner"><div class="face back" aria-hidden="true">${cover}</div><div class="face front" aria-hidden="true">${frontFace(id)}</div></div>`;
     const p={x:0,y:55,z:0,rz:-8,ry:12,rx:8,s:.85,o:0};
     const c={el,id,holo:{tx:0,ty:0,rx:0,ry:0,vx:0,vy:0,x:50,y:50,mx:50,my:50,power:.08,targetPower:.08},p:{...p},t:{...p},v:Object.fromEntries(Object.keys(p).map(k=>[k,0]))};
     el.addEventListener('pointermove',e=>{if(e.pointerType==='mouse'||el.hasPointerCapture(e.pointerId))holoPoint(e,c)});
@@ -80,45 +79,17 @@ function refreshFan(){
     c.el.style.pointerEvents='none';
   });
 }
-async function start(newSpread=true){if(shuffleMotion){shuffleMotion.resolve();shuffleMotion=null;}$('#stage').classList.remove('shuffling','shuffle-impact');const run=++session;state='intro';picked=null;hover=-1;drag=null;$('#revealStage').hidden=true;$('#revealDeck').replaceChildren();if(newSpread)used.clear();if(used.size>=data.length)used.clear();document.body.classList.remove('result','fan-docked');$('#stage').classList.remove('fan-ready');$('#intro').inert=false;$('#reading').hidden=true;$('#deeper').hidden=true;$('#more').setAttribute('aria-expanded','false');$('#more').innerHTML='Khám phá sâu hơn <span>↗</span>';$('#topic').disabled=false;$('#shuffle').disabled=true;$('#hint').textContent='Bộ bài đang thức giấc…';setStep(1);makeDeck();await pause(100);if(run!==session)return;cards.forEach((c,i)=>target(c,{x:i*.13,y:-i*.27,z:0,rz:0,ry:0,rx:0,s:1,o:1}));await pause(1300);if(run!==session)return;await shuffleDeck(run)}
-function shuffleSound(type,pan=0,gain=1){
-  if(!soundOn)return;
-  try{
-    audioCtx??=new(window.AudioContext||window.webkitAudioContext)();audioCtx.resume();
-    const ctx=audioCtx,t=ctx.currentTime,short=type==='riffle',tap=type==='tap';
-    const duration=short?.045:tap?.13:type==='tension'?.15:.25;
-    const buffer=ctx.createBuffer(1,Math.ceil(ctx.sampleRate*duration),ctx.sampleRate),d=buffer.getChannelData(0);
-    for(let i=0;i<d.length;i++)d[i]=(Math.random()*2-1);
-    const src=ctx.createBufferSource(),filter=ctx.createBiquadFilter(),volume=ctx.createGain();
-    src.buffer=buffer;filter.type='bandpass';filter.Q.value=short?.7:.5;
-    filter.frequency.setValueAtTime(tap?380:short?3400:1200,t);
-    filter.frequency.exponentialRampToValueAtTime(tap?140:short?1800:4000,t+duration);
-    const peak=(short?.1:tap?.19:.075)*gain;
-    volume.gain.setValueAtTime(.0001,t);volume.gain.linearRampToValueAtTime(peak,t+.004);volume.gain.exponentialRampToValueAtTime(.0001,t+duration);
-    src.connect(filter);filter.connect(volume);
-    if(ctx.createStereoPanner){const stereo=ctx.createStereoPanner();stereo.pan.value=pan;volume.connect(stereo);stereo.connect(ctx.destination)}else volume.connect(ctx.destination);
-    src.start(t);src.stop(t+duration);
-    if(tap){const o=ctx.createOscillator(),g=ctx.createGain();o.type='sine';o.frequency.setValueAtTime(125,t);o.frequency.exponentialRampToValueAtTime(65,t+.09);g.gain.setValueAtTime(.06,t);g.gain.exponentialRampToValueAtTime(.0001,t+.11);o.connect(g);g.connect(ctx.destination);o.start(t);o.stop(t+.12)}
-  }catch{}
-}
-async function shuffleDeck(run=session){
-  if(state==='shuffle')return;
-  state='shuffle';hover=-1;cancelDrag();setFanDock(false);$('#stage').classList.remove('fan-ready');$('#stage').classList.add('shuffling');
-  $('#shuffle').disabled=true;$('#shuffle').style.visibility='hidden';$('#hint').textContent='Giữ một ý niệm. Bộ bài sẽ tự xòe sau một vòng tráo.';
-  cards.forEach((c,i)=>{c.el.classList.remove('hover');c.el.tabIndex=-1;c.el.style.pointerEvents='none';c.el.style.zIndex=i+1;});
-  if(!reduce){
-    const plan=LuneMotion.shufflePlan(cards.length,innerWidth,cards.map(c=>({...c.p})));
-    await new Promise(resolve=>{shuffleMotion={plan,start:performance.now(),nextEvent:0,resolve,run}});
-  }
-  if(run!==session)return;
-  const shuffled=data.map((_,i)=>i).filter(i=>!used.has(i));
-  for(let j=shuffled.length-1;j>0;j--){const a=new Uint32Array(1);crypto.getRandomValues(a);const k=a[0]%(j+1);[shuffled[j],shuffled[k]]=[shuffled[k],shuffled[j]]}
-  cards.forEach((c,i)=>{c.id=shuffled[i];c.el.querySelector('.front').innerHTML=frontFace(c.id);c.el.style.zIndex=i+1;target(c,fanPose(i));});
-  cards.forEach(c=>{c.p.rx=0;c.t.rx=0;c.p.ry=0;c.t.ry=0});
-  $('#stage').classList.remove('shuffling','shuffle-impact');
-  $('#shuffle').style.visibility='';$('#shuffle').innerHTML='<span>⤨</span> Xáo bài lần nữa';
-  state='fan';setFanDock(true);setStep(2);$('#stage').classList.add('fan-ready');refreshFan();$('#shuffle').disabled=false;
-  $('#hint').textContent='';
+function start(newSpread=true){
+  session++;state='intro';picked=null;hover=-1;drag=null;
+  $('#revealStage').hidden=true;$('#revealDeck').replaceChildren();
+  if(newSpread)used.clear();if(used.size>=data.length)used.clear();
+  document.body.classList.remove('result','fan-docked');$('#stage').classList.remove('fan-ready');
+  $('#intro').inert=false;$('#reading').hidden=true;$('#deeper').hidden=true;
+  $('#more').setAttribute('aria-expanded','false');$('#more').innerHTML='Khám phá sâu hơn <span>↗</span>';
+  $('#topic').disabled=false;$('#hint').textContent='Chọn một lá bài dành cho bạn.';
+  makeDeck();
+  cards.forEach((c,i)=>{const pose=fanPose(i);Object.assign(c.p,pose);Object.assign(c.t,pose);for(const k in c.v)c.v[k]=0});
+  state='fan';setFanDock(true);setStep(2);$('#stage').classList.add('fan-ready');refreshFan();
 }
 function stagePoint(e){const r=$('#deck').getBoundingClientRect();return{x:(e.clientX-r.x)/fanZoom(),y:(e.clientY-r.y)/fanZoom()}}
 function hitCard(e){
@@ -158,7 +129,7 @@ function revealScale(){const d=LuneMotion.dimensions(innerWidth);return Math.max
 async function selectCard(i){
   if(state!=='fan')return;
   const run=session;state='drawing';picked=cards[i];hover=-1;
-  $('#stage').classList.remove('fan-ready');$('#shuffle').disabled=true;$('#topic').disabled=true;
+  $('#stage').classList.remove('fan-ready');$('#topic').disabled=true;
   $('#hint').textContent='Lá bài của bạn đang được hé lộ.';
   cards.forEach(c=>{c.el.tabIndex=-1;c.el.classList.remove('hover');c.el.style.pointerEvents='none'});
   const oldOrigin=$('#deck').getBoundingClientRect(),oldZoom=fanZoom();
@@ -191,26 +162,12 @@ function showResult(){state='result';used.add(picked.id);const d=data[picked.id]
 function updateCount(){$('#journalCount').textContent=journal.length?'· '+journal.length:''}
 function tick(t){
   const dt=Math.min((t-last)/1000||.016,.25);last=t;
-  const motion=shuffleMotion;
-  let elapsed=motion?t-motion.start:0;
-  if(motion){
-    while(motion.nextEvent<motion.plan.events.length&&elapsed>=motion.plan.events[motion.nextEvent].t){
-      const event=motion.plan.events[motion.nextEvent++];
-      if(elapsed-event.t<120){shuffleSound(event.type,event.pan,event.gain);if(event.type==='tap')$('#stage').classList.add('shuffle-impact')}
-    }
-  }
   cards.forEach((c,i)=>{
-    if(motion){
-      const sampled=LuneMotion.sampleTrack(motion.plan.tracks[i],elapsed);
-      Object.assign(c.p,sampled.p);Object.assign(c.t,sampled.p);
-      for(const k in c.v)c.v[k]=0;
-      c.el.style.zIndex=sampled.layer;
-    }else for(const k of Object.keys(c.p)){
+    for(const k of Object.keys(c.p)){
       if(reduce){c.p[k]=c.t[k];c.v[k]=0}
       else [c.p[k],c.v[k]]=LuneMotion.spring(c.p[k],c.v[k],c.t[k],dt,drag&&cards[drag.i]===c?22:14);
     }
     const p=c.p;
-    if(motion)c.el.style.zIndex=elapsed>=motion.plan.loopStart&&elapsed<motion.plan.loopEnd?Math.round(100+p.z*2):i+1;
     const float=!reduce&&state==='chosen'&&c===picked?Math.sin(t*.0015)*1.5:0;
     c.el.style.transform=`translate(${p.x.toFixed(3)}px,${(p.y+float).toFixed(3)}px) rotate(${p.rz.toFixed(3)}deg) scale(${p.s.toFixed(4)})`;
     const h=c.holo;let hx=0,hy=0;
@@ -221,26 +178,22 @@ function tick(t){
       c.el.style.setProperty('--holo-x',h.mx+'%');c.el.style.setProperty('--holo-y',h.my+'%');c.el.style.setProperty('--holo-power',h.power);
       hx=h.rx;hy=h.ry;
     }
-    c.el.querySelector('.card-inner').style.transform=motion
-      ?`perspective(1100px) rotateY(${p.ry.toFixed(3)}deg) rotateX(${p.rx.toFixed(3)}deg)`
-      :`perspective(1100px) rotateX(${(p.rx+hx).toFixed(3)}deg) rotateY(${(p.ry+hy+(c.el.classList.contains('flipped')?180:0)).toFixed(3)}deg)`;
+    c.el.querySelector('.card-inner').style.transform=`perspective(1100px) rotateX(${(p.rx+hx).toFixed(3)}deg) rotateY(${(p.ry+hy+(c.el.classList.contains('flipped')?180:0)).toFixed(3)}deg)`;
     c.el.style.opacity=p.o>.999?1:p.o<.001?0:p.o;
     c.el.style.visibility=p.o<.001?'hidden':'visible';
   });
-  if(motion&&elapsed>=motion.plan.duration&&shuffleMotion===motion){shuffleMotion=null;motion.resolve()}
   if(active)animId=requestAnimationFrame(tick);
 }
 function stars(){const canvas=$('#stars'),ctx=canvas.getContext('2d'),dpr=Math.min(devicePixelRatio||1,1.5);canvas.width=innerWidth*dpr;canvas.height=innerHeight*dpr;ctx.scale(dpr,dpr);let seed=41;function rand(){seed=(seed*16807)%2147483647;return seed/2147483647}for(let i=0;i<(mobile()?55:110);i++){const x=rand()*innerWidth,y=rand()*innerHeight;ctx.fillStyle=`rgba(210,195,161,${.12+rand()*.35})`;ctx.beginPath();ctx.arc(x,y,rand()*.8+.25,0,Math.PI*2);ctx.fill()}}
-$('#shuffle').onclick=()=>{if(state==='fan'){if(soundOn){audioCtx??=new(window.AudioContext||window.webkitAudioContext)();audioCtx.resume()}shuffleDeck()}};$('#sound').onclick=()=>{soundOn=!soundOn;$('#sound').setAttribute('aria-pressed',soundOn);$('#sound').setAttribute('aria-label',soundOn?'Tắt âm thanh':'Bật âm thanh');$('#soundLabel').textContent=soundOn?'Âm thanh bật':'Âm thanh tắt';if(soundOn)tone('chime')};$('#more').onclick=()=>{const expanded=$('#deeper').hidden;$('#deeper').hidden=!expanded;$('#more').setAttribute('aria-expanded',expanded);$('#more').innerHTML=expanded?'Thu gọn <span>↑</span>':'Khám phá sâu hơn <span>↗</span>'};$('#next').onclick=()=>{window.scrollTo({top:0,behavior:reduce?'instant':'smooth'});start(false)};$('#reset').onclick=()=>{window.scrollTo({top:0,behavior:reduce?'instant':'smooth'});start(true)};$('#ritualNav').onclick=()=>{if(state==='result')start(true);else window.scrollTo({top:0,behavior:'smooth'})};
+$('#sound').onclick=()=>{soundOn=!soundOn;$('#sound').setAttribute('aria-pressed',soundOn);$('#sound').setAttribute('aria-label',soundOn?'Tắt âm thanh':'Bật âm thanh');$('#soundLabel').textContent=soundOn?'Âm thanh bật':'Âm thanh tắt';if(soundOn)tone('chime')};$('#more').onclick=()=>{const expanded=$('#deeper').hidden;$('#deeper').hidden=!expanded;$('#more').setAttribute('aria-expanded',expanded);$('#more').innerHTML=expanded?'Thu gọn <span>↑</span>':'Khám phá sâu hơn <span>↗</span>'};$('#next').onclick=()=>{window.scrollTo({top:0,behavior:reduce?'instant':'smooth'});start(false)};$('#reset').onclick=()=>{window.scrollTo({top:0,behavior:reduce?'instant':'smooth'});start(true)};$('#ritualNav').onclick=()=>{if(state==='result')start(true);else window.scrollTo({top:0,behavior:'smooth'})};
 function openModal(html){$('#modalBody').innerHTML=html;$('#modal').showModal()}
-$('#guideNav').onclick=()=>openModal('<h2>Một nghi thức của riêng bạn.</h2><ol><li>Hít thở sâu và chọn điều bạn muốn suy ngẫm: bản thân, tình yêu hoặc công việc.</li><li>Bộ bài tự quay một vòng, gom lại rồi xòe ra. Rê chuột qua dải bài để nâng từng lá. Bạn có thể xáo lại bằng nút bên dưới, hoặc vuốt ngang khoảng trống dưới bộ bài.</li><li>Di chuột, dùng phím Tab, hoặc chạm vào một lá bài. Kéo ra xa để rút; kéo ngắn rồi thả để trả lại.</li><li>Lá được chọn sẽ phóng to giữa màn hình và tự lật. Đọc lời nhắn và kết nối với câu chuyện của bạn.</li></ol><p>Bộ bài có đủ 78 lá: 22 Ẩn chính và 56 Ẩn phụ (Gậy, Cốc, Kiếm, Tiền), mỗi bộ gồm Át–10 và Tiểu Đồng, Kỵ Sĩ, Nữ Hoàng, Vua. Mỗi lần xáo, tối đa 72 lá được lấy ngẫu nhiên từ các lá chưa rút để tạo vòng cung rộng. Toàn bộ 78 lá đều có thể xuất hiện; không lặp lá đã rút trong cùng lượt trải. Hiện đọc theo chiều xuôi; phần mặt hạn chế là góc đối chiếu, không phải kết quả rút ngược. Hình minh họa đang là bản tạm. Nhật ký lưu trên trình duyệt của thiết bị này. Âm thanh có thể bật ở góc trên.</p><p>Tarot ở đây là công cụ tự suy ngẫm. Lời giải nghĩa được biên soạn sẵn, không phải dự báo cá nhân.</p>');
+$('#guideNav').onclick=()=>openModal('<h2>Một nghi thức của riêng bạn.</h2><ol><li>Hít thở sâu và chọn điều bạn muốn suy ngẫm: bản thân, tình yêu hoặc công việc.</li><li>Bộ bài được mở sẵn thành một dải để bạn có thể chọn ngay. Rê chuột qua dải bài để nâng từng lá.</li><li>Di chuột, dùng phím Tab, hoặc chạm vào một lá bài. Kéo ra xa để rút; kéo ngắn rồi thả để trả lại.</li><li>Lá được chọn sẽ phóng to giữa màn hình và tự lật. Đọc lời nhắn và kết nối với câu chuyện của bạn.</li></ol><p>Bộ bài có đủ 78 lá: 22 Ẩn chính và 56 Ẩn phụ (Gậy, Cốc, Kiếm, Tiền), mỗi bộ gồm Át–10 và Tiểu Đồng, Kỵ Sĩ, Nữ Hoàng, Vua. Mỗi lượt, tối đa 72 lá chưa rút được chọn ngẫu nhiên để tạo vòng cung rộng. Toàn bộ 78 lá đều có thể xuất hiện; không lặp lá đã rút trong cùng lượt trải. Hiện đọc theo chiều xuôi; phần mặt hạn chế là góc đối chiếu, không phải kết quả rút ngược. Hình minh họa đang là bản tạm. Nhật ký lưu trên trình duyệt của thiết bị này. Âm thanh có thể bật ở góc trên.</p><p>Tarot ở đây là công cụ tự suy ngẫm. Lời giải nghĩa được biên soạn sẵn, không phải dự báo cá nhân.</p>');
 $('#journalNav').onclick=()=>openModal('<h2>Những lời nhắn đã gặp.</h2>'+(journal.length?journal.map(x=>`<div class="journal-item"><small>${new Intl.DateTimeFormat('vi-VN',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(x.date))} · ${{self:'Bản thân',love:'Tình yêu',work:'Công việc'}[x.topic]||'Bản thân'}</small><h3>${data[x.id][1]} · ${data[x.id][0]}</h3><p>${data[x.id][4]}</p></div>`).join(''):'<p class="journal-empty">Chưa có lá bài nào được mở. Mỗi lời nhắn bạn khám phá sẽ được lưu lại tại đây.</p>'));
 $('#closeModal').onclick=()=>$('#modal').close();$('#modal').addEventListener('click',e=>{if(e.target===$('#modal')){const r=$('#modal').getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)$('#modal').close()}});
-let swipe=null;
 $('#stage').addEventListener('pointerdown',e=>{
   if(state!=='fan')return;
   const i=hitCard(e);
-  if(i>=0)startDrag(e,i);else swipe={x:e.clientX,y:e.clientY};
+  if(i>=0)startDrag(e,i);
 });
 $('#stage').addEventListener('pointermove',e=>{
   if(drag){moveDrag(e);return}
@@ -249,11 +202,8 @@ $('#stage').addEventListener('pointermove',e=>{
   if(i!==hover){hover=i;refreshFan();if(i>=0)tone()}
 });
 $('#stage').addEventListener('pointerleave',()=>{if(state==='fan'&&!drag){hover=-1;refreshFan()}});
-$('#stage').addEventListener('pointerup',e=>{
-  if(drag){endDrag(e);return}
-  if(swipe&&state==='fan'&&Math.abs(e.clientX-swipe.x)>70&&Math.abs(e.clientY-swipe.y)<50)shuffleDeck();swipe=null;
-});
-$('#stage').addEventListener('pointercancel',()=>{swipe=null;cancelDrag()});
+$('#stage').addEventListener('pointerup',e=>{if(drag)endDrag(e)});
+$('#stage').addEventListener('pointercancel',cancelDrag);
 $('#stage').addEventListener('lostpointercapture',()=>cancelDrag());
 window.addEventListener('blur',cancelDrag);
 window.addEventListener('resize',()=>{cancelDrag();stars();if(state==='fan')refreshFan();if(state==='result')resultPose();if(state==='drawing'||state==='flipping'||state==='chosen'){target(picked,{x:0,y:0,s:revealScale()})}});document.addEventListener('visibilitychange',()=>{active=!document.hidden;if(active){last=performance.now();animId=requestAnimationFrame(tick)}else cancelAnimationFrame(animId)});stars();updateCount();requestAnimationFrame(tick);start();

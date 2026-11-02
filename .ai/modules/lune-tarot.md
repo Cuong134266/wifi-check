@@ -6,6 +6,7 @@
 - Workbook verified to contain 78 cards and one `dailyMessage` field per card. It does not contain 7–10 message variants per card.
 - `checkin-bridge.js` sends selected card data to Flutter. Native receives via JavaScript channel; web receives same-origin `postMessage`.
 - `CheckinBottomSheet` presents card image, check-in state, keywords, daily message, caution, small action, detailed perspectives, and reflection question.
+- The ritual opens directly in the randomized card fan; there is no shuffle animation, shuffle button, or swipe-to-shuffle step.
 
 ## Interfaces
 - Flutter widget: `LuneTarotCheckin` via conditional export in `lib/widgets/lune_tarot_checkin.dart`.
