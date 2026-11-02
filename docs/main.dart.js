@@ -100016,7 +100016,7 @@ s="lune-tarot-"+A.nw(o)
 o.d!==$&&A.b6()
 o.d=s
 r=document.createElement("iframe")
-r.src="assets/assets/lune/index.html?v=26-cover"
+r.src="assets/assets/lune/index.html?v=27-direct-draw"
 q=r.style
 q.border="0"
 q=r.style
